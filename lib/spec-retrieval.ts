@@ -94,11 +94,33 @@ const STOP_WORDS = new Set([
   'you', 'we', 'they', 'my', 'our', 'their', 'there', 'has', 'have', 'had', 'not', 'no', 'any', 'all', 'about',
 ]);
 
-/** Lowercased content terms, keeping identifier-ish tokens intact. */
+/**
+ * Light stemming, so a question's wording does not have to match the spec's.
+ *
+ * "what cameras are supported" must reach "Supported camera types" — without
+ * this, support/supported and model/models are different terms and the rule
+ * that answers the question ranks below rules that merely share a noun.
+ *
+ * Deliberately conservative: only plain alphabetic words longer than four
+ * characters are stemmed, so identifiers like `feature-cloud-60`, `GW_WBDC`
+ * and `cam-plus-monthly` survive untouched — matching those exactly is the
+ * whole reason this is lexical.
+ */
+export function stem(token: string): string {
+  if (token.length <= 4 || !/^[a-z]+$/.test(token)) return token;
+  if (token.endsWith('ies')) return `${token.slice(0, -3)}y`;
+  if (token.endsWith('sses') || token.endsWith('shes') || token.endsWith('ches')) return token.slice(0, -2);
+  if (token.endsWith('ing') && token.length > 6) return token.slice(0, -3);
+  if (token.endsWith('ed') && token.length > 5) return token.slice(0, -2);
+  if (token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
+  return token;
+}
+
+/** Lowercased, lightly stemmed content terms; identifier tokens kept intact. */
 export function terms(input: string): string[] {
-  return (input.toLowerCase().match(/[a-z0-9][a-z0-9_-]*/g) ?? []).filter(
-    (t) => t.length > 1 && !STOP_WORDS.has(t),
-  );
+  return (input.toLowerCase().match(/[a-z0-9][a-z0-9_-]*/g) ?? [])
+    .filter((t) => t.length > 1 && !STOP_WORDS.has(t))
+    .map(stem);
 }
 
 export type ScoredBlock = RuleBlock & { score: number };

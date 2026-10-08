@@ -5,6 +5,7 @@ import {
   rankBlocks,
   renderContext,
   retrieveContext,
+  stem,
   terms,
 } from '@/lib/spec-retrieval';
 
@@ -137,5 +138,43 @@ describe('retrieveContext', () => {
     const ctx = retrieveContext(big, 'pro ai cloud 60 price add-on');
     const rendered = renderContext(ctx, big);
     expect(rendered.indexOf('ADDON-005')).toBeLessThan(rendered.indexOf('ADDON-011'));
+  });
+});
+
+describe('stemming', () => {
+  it('matches a question’s wording to the spec’s', () => {
+    // "what cameras are supported" must reach "Supported camera types".
+    expect(stem('supported')).toBe(stem('support'));
+    expect(stem('cameras')).toBe(stem('camera'));
+    expect(stem('models')).toBe(stem('model'));
+  });
+
+  it('leaves identifiers alone', () => {
+    // Exact identifier matching is the reason retrieval is lexical at all.
+    for (const id of ['feature-cloud-60', 'gw_wbdc', 'cam-plus-monthly', 'cam-ultimate', 'b10001']) {
+      expect(stem(id)).toBe(id);
+    }
+  });
+
+  it('leaves short words alone', () => {
+    for (const w of ['hms', 'cpt', 'cvr', 'plan', 'tier']) expect(stem(w)).toBe(w);
+  });
+
+  it('does not mangle words ending in ss', () => {
+    expect(stem('address')).toBe('address');
+  });
+
+  it('surfaces the rule that answers a differently-worded question', () => {
+    const spec = [
+      '# KB',
+      '',
+      '## Add-ons',
+      '',
+      '| ADDON-010 | **Cloud CVR:** $4.99/month/device. Supported camera types: Cam V3, Cam Pan V3. | ✅ Confirmed | KB |',
+      '| FEAT-003 | T3 feature set: 60-day rolling cloud storage, AI Video Search across covered cameras. Cloud CVR is not included. | ✅ Confirmed | KB |',
+    ].join('\n');
+
+    const ranked = rankBlocks(parseRuleBlocks(spec), 'what camera models does cloud CVR support now');
+    expect(ranked[0]?.id).toBe('ADDON-010');
   });
 });

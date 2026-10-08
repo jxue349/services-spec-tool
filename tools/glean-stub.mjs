@@ -127,53 +127,102 @@ const CONFLICTS = {
 };
 
 /**
- * Ask answers, keyed off the question.
+ * Ask answers, derived from the rules the prompt actually carries.
  *
- * A stub that returns one canned answer to every question is worse than no
- * stub: it makes the tool look like it ignores the question. The default here
- * is the honest "not covered" path, so an unrecognised question demonstrates
- * the gap flow rather than fabricating an answer.
+ * Keying canned answers off the question was worse than useless: any question
+ * the keyword list did not know came back "not covered" even when the answer
+ * was sitting in the retrieved rules, which looks exactly like a broken
+ * product. This instead does crude extraction over the <rules> block — the
+ * same input a real model gets — so every question gets a response grounded
+ * in what was actually retrieved, and "not covered" means the rules really
+ * do not mention it.
+ *
+ * It is still a stub: no reasoning, just term overlap. Real answers need the
+ * Glean credential.
  */
-function askAnswer(prompt) {
-  const q = (/<question>\s*([\s\S]*?)\s*<\/question>/.exec(prompt)?.[1] ?? '').toLowerCase();
+const STUB_STOP = new Set(['the','a','an','is','are','was','were','be','and','or','of','to','in','on','for','with','at','by','from','as','it','its','can','does','do','did','what','when','where','who','why','how','will','would','should','could','there','has','have','had','not','no','any','all','about','now','my','our','their']);
 
-  if (/pro ai/.test(q) && /(cost|price|how much)/.test(q)) {
+// Mirrors the light stemming in lib/spec-retrieval.ts so the stub ranks the
+// way the app does: "supported" has to reach "support".
+function stubStem(t) {
+  if (t.length <= 4 || !/^[a-z]+$/.test(t)) return t;
+  if (t.endsWith('ies')) return t.slice(0, -3) + 'y';
+  if (t.endsWith('ing') && t.length > 6) return t.slice(0, -3);
+  if (t.endsWith('ed') && t.length > 5) return t.slice(0, -2);
+  if (t.endsWith('s') && !t.endsWith('ss')) return t.slice(0, -1);
+  return t;
+}
+
+function stubTerms(text) {
+  return (text.toLowerCase().match(/[a-z0-9][a-z0-9_-]*/g) ?? [])
+    .filter((t) => t.length > 1 && !STUB_STOP.has(t))
+    .map(stubStem);
+}
+
+function askAnswer(prompt) {
+  const question = /<question>\s*([\s\S]*?)\s*<\/question>/.exec(prompt)?.[1] ?? '';
+  const rules = /<rules>\s*([\s\S]*?)\s*<\/rules>/.exec(prompt)?.[1] ?? '';
+
+  const qTerms = new Set(stubTerms(question));
+  const ruleLines = rules.split('\n').filter((line) => /\b[A-Z][A-Z0-9]{0,15}-(?:R-)?\d{1,4}\b/.test(line));
+
+  // Weight rare terms higher. Plain overlap favours whichever rule is longest:
+  // "cvr" appearing once is far better evidence than "cam" appearing in half
+  // the document.
+  const freq = new Map();
+  for (const line of ruleLines) {
+    for (const t of new Set(stubTerms(line))) freq.set(t, (freq.get(t) ?? 0) + 1);
+  }
+  const weight = (t) => Math.log(Math.max(2, ruleLines.length) / (1 + (freq.get(t) ?? 0))) + 0.1;
+
+  const scored = ruleLines
+    .map((line) => {
+      const id = /\b([A-Z][A-Z0-9]{0,15}-(?:R-)?\d{1,4})\b/.exec(line)?.[1] ?? '';
+      const matched = [...new Set(stubTerms(line))].filter((t) => qTerms.has(t));
+      const overlap = matched.reduce((sum, t) => sum + weight(t), 0);
+      const status = /⛔|superseded/i.test(line)
+        ? 'superseded'
+        : /🔴/.test(line)
+          ? 'open'
+          : /⚠️|unverified/i.test(line)
+            ? 'unverified'
+            : /✅|confirmed/i.test(line)
+              ? 'confirmed'
+              : 'unknown';
+      return { id, line, overlap, status };
+    })
+    .sort((a, b) => b.overlap - a.overlap);
+
+  const best = scored[0];
+
+  // Needs more than one incidental word in common to count as an answer.
+  if (!best || best.overlap < 1.5) {
     return {
       answer:
-        'Pro AI is $4.99 per month per device, monthly-only in P0. It is a per-device add-on for T1 and T2 parent plans, so a customer with three cameras pays it three times.',
-      citations: [
-        { ruleId: 'ADDON-005', status: 'confirmed', why: 'Gives the price and the monthly-only constraint.' },
-        { ruleId: 'ADDON-004', status: 'confirmed', why: 'Establishes Pro AI as a per-device add-on for T1/T2.' },
-        { ruleId: 'PRICE-008', status: 'confirmed', why: 'Lists the US add-on prices.' },
-      ],
-      confidence: 'high',
-      specGap: null,
+        'The specification does not answer this. The retrieved rules cover nearby ground but none of them state the answer, so there is nothing here to assert.',
+      citations: [],
+      confidence: 'none',
+      specGap: 'No rule in the knowledge base covers this question.',
       caveat: null,
     };
   }
 
-  if (/(cpt|cam protect)/.test(q) && /hms/.test(q)) {
-    return {
-      answer: 'No. CPT and HMS do not work together on one account — they share the Monitoring tab but are distinct services.',
-      citations: [
-        { ruleId: 'MON-001', status: 'unverified', why: 'States the prohibition, but migration cohorts are unresolved.' },
-        { ruleId: 'MON-004', status: 'confirmed', why: 'Gives the Monitoring-tab selection priority.' },
-      ],
-      confidence: 'medium',
-      specGap: null,
-      caveat:
-        'MON-001 is not confirmed — account-level coexistence during migration is still open (V-06). Escalate rather than asserting this to a customer.',
-    };
-  }
+  const top = scored.filter((r) => r.overlap >= best.overlap * 0.5).slice(0, 3);
+  const statement = best.line.replace(/^\s*\|\s*[A-Z0-9-]+\s*\|\s*/, '').split('|')[0].trim();
+  const weak = top.find((r) => r.status !== 'confirmed');
 
-  // Default: the knowledge base does not settle it.
   return {
-    answer:
-      'The specification does not answer this. The rules retrieved cover the subject but none of them state the answer, so there is nothing here to assert.',
-    citations: [],
-    confidence: 'none',
-    specGap: 'No rule in the knowledge base covers this question.',
-    caveat: null,
+    answer: `${statement}\n\n(Stub answer: extracted from ${best.id} in the retrieved rules. A real Glean credential gives a reasoned answer.)`,
+    citations: top.map((r) => ({
+      ruleId: r.id,
+      status: r.status,
+      why: 'Matched the question against the retrieved rules.',
+    })),
+    confidence: best.overlap >= 3 ? 'high' : 'medium',
+    specGap: null,
+    caveat: weak
+      ? `${weak.id} is marked ${weak.status} in the spec — escalate rather than asserting it to a customer.`
+      : null,
   };
 }
 
