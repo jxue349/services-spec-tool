@@ -126,6 +126,19 @@ const CONFLICTS = {
   ],
 };
 
+const ASK = {
+  answer:
+    'Pro AI is $4.99 per month per device, monthly-only in P0. It is a per-device add-on for T1 and T2 parent plans, so a customer with three cameras pays it three times.',
+  citations: [
+    { ruleId: 'ADDON-005', status: 'confirmed', why: 'Gives the price and the monthly-only constraint.' },
+    { ruleId: 'ADDON-004', status: 'confirmed', why: 'Establishes Pro AI as a per-device add-on for T1/T2.' },
+    { ruleId: 'PRICE-008', status: 'confirmed', why: 'Lists the US add-on prices.' },
+  ],
+  confidence: 'high',
+  specGap: null,
+  caveat: null,
+};
+
 const WHAT_IF = {
   answer: 'Voluntary cancellation is not a refund; the entitlement runs to period end (LIFE-015).',
   rules: ['LIFE-015', 'LIFE-015'],
@@ -148,6 +161,7 @@ function replyFor(prompt) {
   if (prompt.includes('check the spec against the prototype')) return CONSISTENCY;
   if (prompt.includes('what the parent must change')) return CONFLICTS;
   if (prompt.includes('answer a what-if question')) return WHAT_IF;
+  if (prompt.includes('How to answer:')) return ASK;
   return SCENARIO;
 }
 

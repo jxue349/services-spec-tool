@@ -1,4 +1,5 @@
 import type {
+  AskResult,
   CommitResponse,
   ConflictFinding,
   ConflictReport,
@@ -145,3 +146,8 @@ export const requestParentChange = (body: {
   conflicts: ConflictFinding[];
 }): Promise<RequestChangeResponse> =>
   request<RequestChangeResponse>('/api/spec/request-change', { method: 'POST', body: JSON.stringify(body) });
+
+// --- ask -------------------------------------------------------------------
+
+export const ask = (spec: string, question: string, specLabel: string): Promise<AskResult> =>
+  request<AskResult>('/api/ask', { method: 'POST', body: JSON.stringify({ spec, question, specLabel }) });

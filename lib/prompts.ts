@@ -38,6 +38,66 @@ function withSpec(spec: string, task: string): string {
   ].join('\n');
 }
 
+/**
+ * Ask — the question surface for support and for customers of this tool.
+ *
+ * Two things make this prompt different from the compilers. The audience is
+ * answering a live question rather than reviewing a spec, so the answer comes
+ * first and the reasoning second. And the knowledge base governs its own use:
+ * rules carry a status, and an answer resting on anything short of a confirmed
+ * rule has to say so rather than presenting it as settled.
+ *
+ * `context` is the retrieved subset of the spec, not the whole document.
+ */
+export function askPrompt(context: string, question: string, specLabel: string): string {
+  return [
+    `You are answering a question about "${specLabel}" for a Wyze support agent or`,
+    'an internal user of the spec tool.',
+    '',
+    'The rules below are the relevant extract of that specification. They are the',
+    'only source you may use.',
+    '',
+    '<rules>',
+    context,
+    '</rules>',
+    '',
+    SHARED_RULES,
+    '',
+    'How to answer:',
+    '- Lead with the direct answer. A support agent needs the conclusion first.',
+    '- Cite the rule IDs the answer rests on, exactly as written above.',
+    '- Report each cited rule\'s status from the extract: confirmed, unverified,',
+    '  open, or superseded. Use "unknown" only when the extract shows no status.',
+    '- NEVER answer from a superseded rule as though it were current. If the only',
+    '  relevant rule is superseded, say what superseded it.',
+    '- If the rules do not settle the question, set confidence to "none", say so',
+    '  plainly in the answer, and describe what is missing in "specGap". Do not',
+    '  fill the gap from general knowledge of how subscriptions usually work.',
+    '- If the answer depends on a rule that is not confirmed, put the warning a',
+    '  reader needs in "caveat" — that this is not yet authoritative and should be',
+    '  escalated rather than asserted to a customer.',
+    '',
+    'Confidence: "high" = confirmed rules settle it outright. "medium" = the rules',
+    'bear on it but leave room for interpretation, or rest on unconfirmed rules.',
+    '"none" = the extract does not answer it.',
+    '',
+    '<question>',
+    question,
+    '</question>',
+    '',
+    'Return exactly this JSON shape:',
+    '{',
+    '  "answer": "the direct answer, then the reasoning",',
+    '  "citations": [',
+    '    { "ruleId": "ADDON-005", "status": "confirmed", "why": "what this rule contributes" }',
+    '  ],',
+    '  "confidence": "high",',
+    '  "specGap": "what the spec fails to define, or null",',
+    '  "caveat": "why this answer is not yet authoritative, or null"',
+    '}',
+  ].join('\n');
+}
+
 export function explorerScenarioPrompt(spec: string, scenario: Scenario): string {
   const devices = scenario.devices
     .map((d, i) => `  ${i + 1}. device "${d.name}" with device-level subscription: ${d.subscription}`)

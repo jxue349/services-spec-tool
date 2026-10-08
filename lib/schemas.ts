@@ -136,6 +136,51 @@ export const StateMachineSchema = z.object({
 });
 
 // --------------------------------------------------------------------------
+// Ask — the support/customer-facing question surface
+// --------------------------------------------------------------------------
+
+export const ASK_QUESTION_MAX_CHARS = 1_000;
+
+export const AskRequestSchema = z.object({
+  spec: specString,
+  question: z.string().min(1).max(ASK_QUESTION_MAX_CHARS),
+  /** Which document was asked about, for display and provenance. */
+  specLabel: z.string().min(1).max(120),
+});
+
+const ruleStatus = z.enum(['confirmed', 'unverified', 'open', 'superseded', 'unknown']);
+
+export const AskResponseSchema = z.object({
+  answer: shortText,
+  /**
+   * Rules the answer rests on. Status comes from the spec, not the model, so
+   * a reader can tell a confirmed rule from an open question.
+   */
+  citations: z
+    .array(z.object({ ruleId: z.string().max(40), status: ruleStatus, why: shortText }))
+    .max(20),
+  /**
+   * How far the spec actually settles the question. "none" means the spec is
+   * silent and the answer must say so rather than improvise.
+   */
+  confidence: z.enum(['high', 'medium', 'none']),
+  specGap: shortText.nullable(),
+  /**
+   * Set when the answer leans on a rule the spec does not mark confirmed —
+   * the knowledge base's own governance says those need a caveat.
+   */
+  caveat: shortText.nullable(),
+});
+
+export type AskResponse = z.infer<typeof AskResponseSchema>;
+export type AskCitation = AskResponse['citations'][number];
+
+export type AskResult = AskResponse & {
+  /** Retrieval provenance, added server-side. */
+  retrieval: { rulesConsidered: number; rulesSent: number; wholeDocument: boolean };
+};
+
+// --------------------------------------------------------------------------
 // Parent-spec conflict check
 // --------------------------------------------------------------------------
 

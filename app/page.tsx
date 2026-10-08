@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckInDialog } from '@/components/CheckInDialog';
+import { AskTab } from '@/components/AskTab';
 import { ConsistencyTab } from '@/components/ConsistencyTab';
 import { ExplorerTab } from '@/components/ExplorerTab';
 import { ParentCheckTab } from '@/components/ParentCheckTab';
@@ -14,6 +15,9 @@ import { findRuleRange } from '@/lib/client/rules';
 import type { CommitResponse, SpecListEntry, SpecResponse, TestMatrix } from '@/lib/schemas';
 
 const TABS = [
+  // Ask leads: it is the surface support and customers of this tool use, and
+  // the only one that does not require knowing how the spec is organised.
+  { id: 'ask', label: 'Ask' },
   { id: 'explorer', label: 'Behavior Explorer' },
   { id: 'tests', label: 'QA Test Matrix' },
   { id: 'states', label: 'State Machine' },
@@ -42,7 +46,7 @@ export default function Page() {
   const [prNotice, setPrNotice] = useState<{ url: string; branch: string } | null>(null);
 
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [tab, setTab] = useState<TabId>('explorer');
+  const [tab, setTab] = useState<TabId>('ask');
   const [matrix, setMatrix] = useState<TestMatrix | null>(null);
 
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
@@ -247,7 +251,10 @@ export default function Page() {
               </p>
             ) : null}
 
-            {/* All four stay mounted so results survive tab switches. */}
+            {/* All stay mounted so results survive tab switches. */}
+            <div className={tab === 'ask' ? 'block' : 'hidden'}>
+              <AskTab spec={spec} draft={draft} onReveal={revealRule} />
+            </div>
             <div className={tab === 'explorer' ? 'block' : 'hidden'}>
               <ExplorerTab spec={draft} onReveal={revealRule} />
             </div>

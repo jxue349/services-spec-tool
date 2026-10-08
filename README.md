@@ -4,8 +4,9 @@ A Git-versioned **Product Behavior Specification** is the single source of
 truth. A *behavior compiler* — Glean's Chat API, called server-side — turns
 that one document into four representations:
 
-| Tab | What it compiles |
+| Tab | What it does |
 | --- | --- |
+| **Ask** | The main surface. A question in, an answer out, with the rules it rests on and their status. Retrieves over the spec rather than sending all of it |
 | **Behavior Explorer** | Resolves entitlements for a built scenario, and answers free-form "what if…?" questions |
 | **QA Test Matrix** | 15–25 test cases, weighted toward behavior the prototype never visualized |
 | **State Machine** | The subscription lifecycle as a Mermaid diagram plus a transitions table |
@@ -149,6 +150,44 @@ pull-request flow as any other change — the first version gets reviewed like
 every version after it.
 
 ---
+
+## Ask
+
+Ask is the surface support agents and users of this tool come to. It takes a
+question, not a spec to compile, so the answer leads and the evidence follows.
+
+**It retrieves rather than sending the whole document.** The parent knowledge
+base is 74 KB across 172 rules and grows with every distillation; a question
+about Pro AI pricing sends the ~50 rules that bear on it, not all 172. In
+practice that is a 75 KB prompt down to ~26 KB, and the model is not asked to
+find a needle in a document it half-reads. Retrieval is lexical
+(`lib/spec-retrieval.ts`) because rule text is dense with exact identifiers —
+`feature-cloud-60`, `GW_WBDC`, `ADDON-011` — that questions quote verbatim, and
+an exact match on those beats semantic similarity with no index to keep fresh.
+Naming a rule id in the question retrieves that rule outright.
+
+**Answers carry rule status.** The knowledge base marks every rule ✅ Confirmed,
+⚠️ Unverified, 🔴 Open or ⛔ Superseded, and its own `GOV-006` says answers may
+be asserted only from confirmed rules. So each citation shows its status, an
+answer resting on anything weaker comes back with a caveat telling the agent
+not to assert it to a customer, and a superseded rule is never answered from as
+though it were current.
+
+**It says when the spec does not answer.** Confidence `none` plus a named spec
+gap, rather than a plausible guess. If retrieval matches nothing at all, the
+route answers that directly without calling the model.
+
+Scope: with a child spec selected, a toggle switches between asking that spec
+and asking the knowledge base.
+
+### Why not Glean's MCP for this
+
+Glean's MCP server indexes company content — Confluence, Jira, Slack. The
+parent spec lives in Git and is served by this app, so it is not in that index;
+MCP cannot retrieve it. MCP is also the same service behind the same OAuth wall
+as the Chat API already in use, so it adds a protocol layer rather than a
+capability. Retrieval therefore runs over the spec document itself, which is
+also what keeps the answer provably spec-derived.
 
 ## The parent knowledge base
 

@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { RuleChips } from './RuleChip';
 import { Button, EmptyState, ErrorNote, Panel, SectionLabel } from './ui';
-import { compileScenario, compileWhatIf } from '@/lib/client/api';
-import { MAX_SCENARIO_DEVICES, QUESTION_MAX_CHARS } from '@/lib/schemas';
-import type { ExplorerScenarioResult, ExplorerWhatIfResult } from '@/lib/schemas';
+import { compileScenario } from '@/lib/client/api';
+import { MAX_SCENARIO_DEVICES } from '@/lib/schemas';
+import type { ExplorerScenarioResult } from '@/lib/schemas';
 
 const ACCOUNT_OPTIONS = [
   'None',
@@ -36,10 +36,6 @@ export function ExplorerTab({ spec, onReveal }: { spec: string; onReveal: (rule:
   const [scenarioBusy, setScenarioBusy] = useState(false);
   const [scenarioError, setScenarioError] = useState<unknown>(null);
 
-  const [question, setQuestion] = useState('');
-  const [whatIf, setWhatIf] = useState<ExplorerWhatIfResult | null>(null);
-  const [whatIfBusy, setWhatIfBusy] = useState(false);
-  const [whatIfError, setWhatIfError] = useState<unknown>(null);
 
   const updateDevice = (index: number, patch: Partial<DeviceRow>) => {
     setDevices((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -61,18 +57,6 @@ export function ExplorerTab({ spec, onReveal }: { spec: string; onReveal: (rule:
     }
   };
 
-  const ask = async () => {
-    setWhatIfBusy(true);
-    setWhatIfError(null);
-    try {
-      const res = await compileWhatIf(spec, question.trim());
-      if (res.kind === 'whatIf') setWhatIf(res.result);
-    } catch (err) {
-      setWhatIfError(err);
-    } finally {
-      setWhatIfBusy(false);
-    }
-  };
 
   return (
     <div className="space-y-4">
@@ -182,47 +166,6 @@ export function ExplorerTab({ spec, onReveal }: { spec: string; onReveal: (rule:
         <EmptyState>Build a scenario and resolve it to see how the spec settles entitlements.</EmptyState>
       )}
 
-      <Panel className="p-3">
-        <SectionLabel>What if…?</SectionLabel>
-        <div className="mt-2 flex items-start gap-2">
-          <input
-            value={question}
-            maxLength={QUESTION_MAX_CHARS}
-            onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && question.trim() !== '' && !whatIfBusy) void ask();
-            }}
-            placeholder="What if a user refunds an iOS purchase while in the grace period?"
-            className="flex-1 rounded-md border border-line bg-panelAlt px-2 py-1.5 text-xs text-ink outline-none focus:border-accent/60"
-          />
-          <Button
-            variant="primary"
-            onClick={() => void ask()}
-            loading={whatIfBusy}
-            disabled={question.trim() === '' || spec.trim() === ''}
-          >
-            Ask
-          </Button>
-        </div>
-        <div className="mt-1 text-right font-mono text-[10px] text-inkDim">
-          {question.length}/{QUESTION_MAX_CHARS}
-        </div>
-
-        {whatIfError ? <ErrorNote error={whatIfError} onDismiss={() => setWhatIfError(null)} /> : null}
-
-        {whatIf ? (
-          <div className="mt-2 space-y-2 rounded-md border border-line bg-panelAlt p-3">
-            <p className="text-xs leading-relaxed text-ink">{whatIf.answer}</p>
-            <RuleChips rules={whatIf.rules} onReveal={onReveal} />
-            {whatIf.specGap !== null && whatIf.specGap.trim() !== '' ? (
-              <div className="rounded border border-warning/50 bg-warning/10 px-2 py-1.5 text-[11px] text-warning">
-                <span className="font-semibold">Spec gap: </span>
-                {whatIf.specGap}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </Panel>
     </div>
   );
 }
