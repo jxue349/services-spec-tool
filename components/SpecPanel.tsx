@@ -89,12 +89,34 @@ export function SpecPanel({
         <Button onClick={onPullLatest} loading={pulling} disabled={loading || pulling}>
           Pull latest
         </Button>
-        <Button variant="primary" onClick={onCheckIn} disabled={!dirty || loading || spec === null}>
+        {/*
+          Styled as primary only when it can actually do something. A bright,
+          inert button reads as broken rather than as "nothing to commit", and
+          the title says which it is for anyone who clicks anyway.
+        */}
+        <Button
+          variant={dirty ? 'primary' : 'ghost'}
+          onClick={onCheckIn}
+          disabled={!dirty || loading || spec === null}
+          title={
+            spec === null
+              ? 'No spec loaded'
+              : dirty
+                ? 'Open a pull request with your edits'
+                : 'Nothing to check in — the editor matches the committed version'
+          }
+        >
           Check in changes
         </Button>
         <Button onClick={onOpenHistory} disabled={spec === null}>
           History
         </Button>
+
+        {/* Says why "Check in changes" is inert, without needing a hover. */}
+        {spec !== null && !dirty ? (
+          <span className="font-mono text-[10px] text-inkDim">no local changes</span>
+        ) : null}
+
         <span className="ml-auto font-mono text-[10px] text-inkDim">
           {spec ? `${spec.specPath} @ ${spec.baseBranch}` : ''}
         </span>
