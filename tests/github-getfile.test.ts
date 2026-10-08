@@ -31,7 +31,7 @@ import type { SpecEnv } from '@/lib/env';
 const env: SpecEnv = {
   githubToken: 'token',
   owner: 'jxue349',
-  repo: 'services-addon-demo',
+  repo: 'services-spec-tool',
   specRoot: 'spec',
   parentPath: 'spec/parent.md',
   baseBranch: 'main',
@@ -64,7 +64,7 @@ describe('getFile', () => {
 
     const file = await createSpecRepoClient(env).getFile('main', env.parentPath);
 
-    expect(getBlob).toHaveBeenCalledWith({ owner: 'jxue349', repo: 'services-addon-demo', file_sha: 'blobBIG' });
+    expect(getBlob).toHaveBeenCalledWith({ owner: 'jxue349', repo: 'services-spec-tool', file_sha: 'blobBIG' });
     // Never silently blank.
     expect(file).toEqual({ content: '# the real spec', sha: 'blobBIG' });
   });

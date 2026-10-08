@@ -4,19 +4,50 @@
  */
 
 /**
- * A rule ID, with or without a spec namespace.
+ * A rule ID.
  *
- * Child specs namespace their rules (`CAMPLUS-R-101`) so that merging them
- * into the parent cannot collide, and so a citation says which spec it came
- * from. Bare `R-101` stays valid for the parent spec and for anything written
- * before namespacing.
+ * Real specs number rules by domain — `TIER-001`, `ADDON-005`, `LIFE-014` —
+ * rather than with a single `R-` series, and child specs namespace theirs
+ * (`CAMPLUS-R-101`) so merging into the parent cannot collide. All three
+ * shapes have to match, plus bare `R-101`.
  */
-const RULE_ID = /\b(?:[A-Z][A-Z0-9]{1,15}-)?R-\d{3}\b/g;
+const RULE_ID_CORE = String.raw`[A-Z][A-Z0-9]{0,15}-(?:R-)?\d{1,4}`;
 
-/** Every distinct rule ID in the spec, in document order. */
+/**
+ * Where a rule is *defined*, as opposed to merely mentioned.
+ *
+ * This distinction is load-bearing. A spec's Source column is full of Jira
+ * keys — `BCS-137`, `BUG-60257` — that are shaped exactly like rule IDs, so
+ * matching anywhere would list tickets as rules. A definition is the first
+ * cell of a table row, the head of a list item, or a heading.
+ */
+function definitionForms(idPattern: string): string {
+  const nb = '(?<![A-Za-z0-9-])';
+  return [
+    // | TIER-001 | ...        (markdown table, the common form in real specs)
+    `^[ \\t]*\\|[ \\t]*(?:\\*\\*|__)?${nb}${idPattern}(?:\\*\\*|__)?[ \\t]*\\|`,
+    // - **R-101** — ...       (bullet list)
+    `^[ \\t]*(?:[-*+][ \\t]+)?(?:\\*\\*|__)?${nb}${idPattern}(?:\\*\\*|__)?(?![A-Za-z0-9-])`,
+    // ### R-101 ...
+    `^#{1,6}[ \\t]+(?:\\*\\*|__)?${nb}${idPattern}`,
+  ].join('|');
+}
+
+const RULE_DEFINITION = new RegExp(`(?:${definitionForms(`(${RULE_ID_CORE})`)})`, 'gm');
+
+/**
+ * Every distinct rule ID the spec *defines*, in document order.
+ *
+ * Mentions elsewhere — cross-references, Jira links in a Source column — are
+ * deliberately excluded, so the list is the spec's actual rule inventory.
+ */
 export function extractRuleIds(spec: string): string[] {
   const seen = new Set<string>();
-  for (const match of spec.matchAll(RULE_ID)) seen.add(match[0]);
+  for (const match of spec.matchAll(RULE_DEFINITION)) {
+    // One capture group per alternative; exactly one is set per match.
+    const id = match.slice(1).find((group) => typeof group === 'string');
+    if (id !== undefined) seen.add(id);
+  }
   return [...seen];
 }
 
@@ -50,8 +81,8 @@ export function findRuleRange(spec: string, ruleId: string): RuleRange | null {
   // land on CAMPLUS-R-101, or a parent citation would jump into a child spec.
   const notIdChar = '(?<![A-Za-z0-9-])';
 
-  const definition = new RegExp(`^[ \\t]*(?:[-*+][ \\t]+)?(?:\\*\\*|__)?${notIdChar}${id}(?:\\*\\*|__)?\\b`, 'm');
-  const citation = new RegExp(`${notIdChar}${id}\\b`);
+  const definition = new RegExp(definitionForms(id), 'm');
+  const citation = new RegExp(`${notIdChar}${id}(?![A-Za-z0-9-])`);
 
   // Prefer the definition line; fall back to the first citation anywhere.
   const match = definition.exec(spec) ?? citation.exec(spec);
@@ -72,6 +103,7 @@ export function findRuleRange(spec: string, ruleId: string): RuleRange | null {
 function startsNewBlock(line: string): boolean {
   return (
     line.trim() === '' ||
+    /^[ \t]*\|/.test(line) || // next table row — one rule per row, so stop here
     /^[ \t]*[-*+][ \t]+/.test(line) || // next list item — rules are usually a tight list
     /^[ \t]*\d+[.)][ \t]+/.test(line) || // next ordered item
     /^#{1,6}[ \t]/.test(line) // next heading

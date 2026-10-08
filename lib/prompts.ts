@@ -6,12 +6,17 @@ import type { Scenario, TestCase } from './schemas';
  * Every prompt carries the *full current spec as edited in the UI* — not the
  * committed version — because the demo loop is "edit a rule, recompile, watch
  * the outputs change". Every prompt also repeats the two hard rules: cite
- * R-xxx IDs, and never invent behavior the spec does not define.
+ * the spec's own rule IDs, and never invent behavior the spec does not define.
  */
 
 const SHARED_RULES = [
   'Hard requirements:',
-  '- Cite the specific rule IDs (e.g. "R-102") that justify each conclusion.',
+  '- Cite the specific rule IDs that justify each conclusion, exactly as the spec',
+  '  writes them. Specs number rules by domain ("TIER-001", "ADDON-005",',
+  '  "LIFE-014") or as a single series ("R-102", "CAMPLUS-R-101") — use whichever',
+  '  convention the spec in front of you uses. Never invent an ID or renumber one.',
+  '- A rule ID is one the spec DEFINES. Ticket keys cited as evidence (Jira keys',
+  '  such as "BCS-137") are sources, not rules — never cite them as rule IDs.',
   '- Do not invent rules or behavior. If the spec is silent on something, name it as a',
   '  spec gap in the appropriate field instead of filling it in from general knowledge',
   '  of how subscriptions usually work.',
@@ -224,8 +229,9 @@ export function consistencyPrompt(spec: string, testMatrix?: TestCase[]): string
     [
       'Task: check the spec against the prototype and against QA coverage.',
       '',
-      'Emit one finding for EVERY rule ID (R-xxx) that appears in the spec. Do not skip',
-      'rules and do not merge rules into a single finding.',
+      'Emit one finding for EVERY rule the spec defines, using the spec\'s own IDs.',
+      'Do not skip rules and do not merge rules into a single finding. If the spec',
+      'defines many rules, cover them all rather than sampling.',
       '',
       'Prototype coverage judgement — be strict:',
       '- "covered": a flow listed under "Prototype coverage" would actually exercise this',

@@ -78,8 +78,10 @@ describe('findRuleRange', () => {
 });
 
 describe('extractRuleIds', () => {
-  it('returns each rule once, in document order', () => {
-    expect(extractRuleIds(SPEC)).toEqual(['R-102', 'R-101']);
+  it('returns each rule once, in definition order', () => {
+    // SPEC mentions R-102 in prose before defining it. Only definitions count,
+    // so the inventory follows where rules are declared, not first mentioned.
+    expect(extractRuleIds(SPEC)).toEqual(['R-101', 'R-102']);
   });
 });
 
