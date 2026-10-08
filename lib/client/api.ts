@@ -1,5 +1,6 @@
 import type {
   AskResult,
+  GapResponse,
   CommitResponse,
   ConflictFinding,
   ConflictReport,
@@ -151,3 +152,13 @@ export const requestParentChange = (body: {
 
 export const ask = (spec: string, question: string, specLabel: string): Promise<AskResult> =>
   request<AskResult>('/api/ask', { method: 'POST', body: JSON.stringify({ spec, question, specLabel }) });
+
+export const flagGap = (body: {
+  question: string;
+  specPath: string;
+  specLabel: string;
+  answer?: string;
+  specGap?: string;
+  rulesConsidered?: number;
+  rulesRetrieved?: number;
+}): Promise<GapResponse> => request<GapResponse>('/api/gaps', { method: 'POST', body: JSON.stringify(body) });

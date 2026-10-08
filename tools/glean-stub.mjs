@@ -126,18 +126,56 @@ const CONFLICTS = {
   ],
 };
 
-const ASK = {
-  answer:
-    'Pro AI is $4.99 per month per device, monthly-only in P0. It is a per-device add-on for T1 and T2 parent plans, so a customer with three cameras pays it three times.',
-  citations: [
-    { ruleId: 'ADDON-005', status: 'confirmed', why: 'Gives the price and the monthly-only constraint.' },
-    { ruleId: 'ADDON-004', status: 'confirmed', why: 'Establishes Pro AI as a per-device add-on for T1/T2.' },
-    { ruleId: 'PRICE-008', status: 'confirmed', why: 'Lists the US add-on prices.' },
-  ],
-  confidence: 'high',
-  specGap: null,
-  caveat: null,
-};
+/**
+ * Ask answers, keyed off the question.
+ *
+ * A stub that returns one canned answer to every question is worse than no
+ * stub: it makes the tool look like it ignores the question. The default here
+ * is the honest "not covered" path, so an unrecognised question demonstrates
+ * the gap flow rather than fabricating an answer.
+ */
+function askAnswer(prompt) {
+  const q = (/<question>\s*([\s\S]*?)\s*<\/question>/.exec(prompt)?.[1] ?? '').toLowerCase();
+
+  if (/pro ai/.test(q) && /(cost|price|how much)/.test(q)) {
+    return {
+      answer:
+        'Pro AI is $4.99 per month per device, monthly-only in P0. It is a per-device add-on for T1 and T2 parent plans, so a customer with three cameras pays it three times.',
+      citations: [
+        { ruleId: 'ADDON-005', status: 'confirmed', why: 'Gives the price and the monthly-only constraint.' },
+        { ruleId: 'ADDON-004', status: 'confirmed', why: 'Establishes Pro AI as a per-device add-on for T1/T2.' },
+        { ruleId: 'PRICE-008', status: 'confirmed', why: 'Lists the US add-on prices.' },
+      ],
+      confidence: 'high',
+      specGap: null,
+      caveat: null,
+    };
+  }
+
+  if (/(cpt|cam protect)/.test(q) && /hms/.test(q)) {
+    return {
+      answer: 'No. CPT and HMS do not work together on one account — they share the Monitoring tab but are distinct services.',
+      citations: [
+        { ruleId: 'MON-001', status: 'unverified', why: 'States the prohibition, but migration cohorts are unresolved.' },
+        { ruleId: 'MON-004', status: 'confirmed', why: 'Gives the Monitoring-tab selection priority.' },
+      ],
+      confidence: 'medium',
+      specGap: null,
+      caveat:
+        'MON-001 is not confirmed — account-level coexistence during migration is still open (V-06). Escalate rather than asserting this to a customer.',
+    };
+  }
+
+  // Default: the knowledge base does not settle it.
+  return {
+    answer:
+      'The specification does not answer this. The rules retrieved cover the subject but none of them state the answer, so there is nothing here to assert.',
+    citations: [],
+    confidence: 'none',
+    specGap: 'No rule in the knowledge base covers this question.',
+    caveat: null,
+  };
+}
 
 const WHAT_IF = {
   answer: 'Voluntary cancellation is not a refund; the entitlement runs to period end (LIFE-015).',
@@ -161,7 +199,7 @@ function replyFor(prompt) {
   if (prompt.includes('check the spec against the prototype')) return CONSISTENCY;
   if (prompt.includes('what the parent must change')) return CONFLICTS;
   if (prompt.includes('answer a what-if question')) return WHAT_IF;
-  if (prompt.includes('How to answer:')) return ASK;
+  if (prompt.includes('How to answer:')) return askAnswer(prompt);
   return SCENARIO;
 }
 

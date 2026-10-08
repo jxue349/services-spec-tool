@@ -131,9 +131,13 @@ repo. Do not use a classic PAT, and do not grant org-wide scopes.
 2. **Resource owner**: the org or user that owns the spec repo.
 3. **Repository access**: *Only select repositories* → pick the spec repo, and
    nothing else.
-4. **Repository permissions** — exactly two, nothing more:
+4. **Repository permissions** — exactly three, nothing more:
    - **Contents**: Read and write (read the spec, create the branch and commit)
    - **Pull requests**: Read and write (open the PR)
+   - **Issues**: Read and write (log questions the spec cannot answer)
+
+   Without Issues the spec flows all work and only gap logging fails, with a
+   message saying which permission is missing.
 5. Leave every account permission at *No access*. `workflow`, `admin`, and
    `delete_repo` are never needed; if something asks for them, stop.
 6. Set an expiry and put a calendar reminder to rotate it.
@@ -179,6 +183,26 @@ route answers that directly without calling the model.
 
 Scope: with a child spec selected, a toggle switches between asking that spec
 and asking the knowledge base.
+
+### The gap log
+
+A question the spec cannot answer is the most useful signal this tool
+produces: a real person needed an answer the organisation has not written
+down. **Flag to knowledge-base owners** turns it into a GitHub issue labelled
+`kb-gap`, carrying the question, which spec was asked, what retrieval found,
+and an @-mention of the parent spec's followers. Owners get a reviewable
+backlog and decide what to distil into the knowledge base.
+
+Issues rather than pull requests: a gap is a question to be answered, not a
+change to merge, and it needs somewhere to be discussed before anyone knows
+what the rule should say.
+
+Asking the same question twice joins the existing issue instead of filing a
+duplicate. That check is in two places on purpose — GitHub's issue list is
+eventually consistent, so an issue filed seconds ago is not reliably returned
+by the next list call, and the API check alone files duplicates. A short
+in-process memo covers that window. Both paths share one definition of "same
+question" (`gapKey`), so they cannot disagree about whether two flags match.
 
 ### Why not Glean's MCP for this
 

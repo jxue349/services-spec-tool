@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import type { SpecEnv } from './env';
+import { gapKey } from './gaps';
 import type { CommitResponse, HistoryEntry, SpecResponse } from './schemas';
 
 /**
@@ -36,6 +37,9 @@ export interface SpecRepoClient {
    */
   requestReviewers(prNumber: number, reviewers: string[]): Promise<{ requested: string[]; refused: string[] }>;
   updatePullRequestBody(prNumber: number, body: string): Promise<void>;
+  /** An already-open gap issue for this exact question, if there is one. */
+  findOpenGapIssue(title: string, label: string): Promise<{ url: string; number: number } | null>;
+  createIssue(args: { title: string; body: string; labels: string[] }): Promise<{ url: string; number: number }>;
   lastCommitForPath(ref: string, path: string): Promise<HistoryEntry | null>;
   listCommitsForPath(ref: string, path: string, limit: number): Promise<HistoryEntry[]>;
   /** Every .md file under `root`, recursively. Used by the spec selector. */
@@ -303,6 +307,27 @@ export function createSpecRepoClient(env: SpecEnv): SpecRepoClient {
 
     async updatePullRequestBody(prNumber, body) {
       await octokit.rest.pulls.update({ owner, repo, pull_number: prNumber, body });
+    },
+
+    async findOpenGapIssue(title, label) {
+      const res = await octokit.rest.issues.listForRepo({
+        owner,
+        repo,
+        state: 'open',
+        labels: label,
+        per_page: 100,
+      });
+      // Same question asked twice should join the existing issue rather than
+      // adding another row to the owners' backlog. Uses the same notion of
+      // "same question" as the in-process memo, so the two cannot disagree.
+      const needle = gapKey(title);
+      const hit = res.data.find((issue) => gapKey(issue.title) === needle);
+      return hit ? { url: hit.html_url, number: hit.number } : null;
+    },
+
+    async createIssue({ title, body, labels }) {
+      const res = await octokit.rest.issues.create({ owner, repo, title, body, labels });
+      return { url: res.data.html_url, number: res.data.number };
     },
 
     async lastCommitForPath(ref, specPath) {

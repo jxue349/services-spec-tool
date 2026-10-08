@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { RuleChip } from './RuleChip';
 import { Button, EmptyState, ErrorNote, Panel, SectionLabel } from './ui';
-import { ask, getSpec } from '@/lib/client/api';
+import { ask, flagGap, getSpec } from '@/lib/client/api';
 import { ASK_QUESTION_MAX_CHARS } from '@/lib/schemas';
-import type { AskResult, SpecResponse } from '@/lib/schemas';
+import type { AskResult, GapResponse, SpecResponse } from '@/lib/schemas';
 
 /**
  * Ask — the main surface of the tool.
@@ -53,6 +53,10 @@ export function AskTab({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
+  const [flagging, setFlagging] = useState(false);
+  const [flagged, setFlagged] = useState<GapResponse | null>(null);
+  const [flagError, setFlagError] = useState<unknown>(null);
+
   if (spec === null) return <EmptyState>Load a spec first.</EmptyState>;
 
   const askingParent = scope === 'parent' && !spec.isParent;
@@ -65,6 +69,8 @@ export function AskTab({
     setBusy(true);
     setError(null);
     setAsked(trimmed);
+    setFlagged(null);
+    setFlagError(null);
     try {
       // Asking the parent while a child is selected reads it fresh, so the
       // answer reflects the knowledge base as it stands right now.
@@ -74,6 +80,29 @@ export function AskTab({
       setError(err);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const flag = async () => {
+    if (result === null || asked === '') return;
+    setFlagging(true);
+    setFlagError(null);
+    try {
+      setFlagged(
+        await flagGap({
+          question: asked,
+          specPath: askingParent ? spec.parentPath : spec.specPath,
+          specLabel: scopeLabel,
+          answer: result.answer,
+          ...(result.specGap !== null ? { specGap: result.specGap } : {}),
+          rulesConsidered: result.retrieval.rulesConsidered,
+          rulesRetrieved: result.retrieval.rulesSent,
+        }),
+      );
+    } catch (err) {
+      setFlagError(err);
+    } finally {
+      setFlagging(false);
     }
   };
 
@@ -184,6 +213,58 @@ export function AskTab({
               </ul>
             </Panel>
           ) : null}
+
+          {/*
+            A question the spec cannot answer is the most useful signal this
+            tool produces, so logging it is the primary action in that case
+            rather than a footnote. It stays available on any answer — a thin
+            or wrong answer is worth flagging too.
+          */}
+          <Panel
+            className={`p-3 ${result.confidence === 'none' ? 'border-warning/50 bg-warning/5' : ''}`}
+          >
+            <SectionLabel>
+              {result.confidence === 'none' ? 'Not covered — tell the owners' : 'Answer not good enough?'}
+            </SectionLabel>
+
+            <p className="mt-1 text-xs leading-relaxed text-ink">
+              {result.confidence === 'none'
+                ? 'Log this question for the knowledge-base owners. They review flagged questions and decide what to write into the spec.'
+                : 'If this is wrong or incomplete, log it so the owners can tighten the rules behind it.'}
+            </p>
+
+            {flagError ? (
+              <div className="mt-2">
+                <ErrorNote error={flagError} onDismiss={() => setFlagError(null)} />
+              </div>
+            ) : null}
+
+            {flagged ? (
+              <div className="mt-3 rounded-md border border-accent/50 bg-accent/10 px-3 py-2 text-[11px] text-accent">
+                {flagged.alreadyLogged
+                  ? 'Already logged — someone asked this before.'
+                  : 'Logged for the knowledge-base owners.'}{' '}
+                <a
+                  href={flagged.issueUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="underline underline-offset-2"
+                >
+                  Issue #{flagged.issueNumber} →
+                </a>
+              </div>
+            ) : (
+              <div className="mt-3">
+                <Button
+                  variant={result.confidence === 'none' ? 'primary' : 'ghost'}
+                  onClick={() => void flag()}
+                  loading={flagging}
+                >
+                  Flag to knowledge-base owners
+                </Button>
+              </div>
+            )}
+          </Panel>
 
           <p className="px-1 font-mono text-[10px] text-inkDim">
             {asked === '' ? '' : `“${asked}” · `}

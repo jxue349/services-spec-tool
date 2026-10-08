@@ -180,6 +180,23 @@ export type AskResult = AskResponse & {
   retrieval: { rulesConsidered: number; rulesSent: number; wholeDocument: boolean };
 };
 
+export const GapRequestSchema = z.object({
+  question: z.string().min(1).max(ASK_QUESTION_MAX_CHARS),
+  specPath: z.string().min(1).max(400),
+  specLabel: z.string().min(1).max(120),
+  answer: z.string().max(4_000).optional(),
+  specGap: z.string().max(2_000).optional(),
+  rulesConsidered: z.number().int().nonnegative().max(100_000).optional(),
+  rulesRetrieved: z.number().int().nonnegative().max(100_000).optional(),
+});
+
+export type GapResponse = {
+  issueUrl: string;
+  issueNumber: number;
+  /** True when an open issue for this question already existed. */
+  alreadyLogged: boolean;
+};
+
 // --------------------------------------------------------------------------
 // Parent-spec conflict check
 // --------------------------------------------------------------------------
