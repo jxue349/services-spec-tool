@@ -6,7 +6,7 @@ import { JsonExtractionError, SchemaValidationError } from '@/lib/json';
 import { askPrompt } from '@/lib/prompts';
 import { checkRateLimit, clientKey } from '@/lib/ratelimit';
 import { AskRequestSchema, AskResponseSchema } from '@/lib/schemas';
-import type { AskResult } from '@/lib/schemas';
+import type { AskResult, RetrievedRule } from '@/lib/schemas';
 import { parseRuleBlocks, renderContext, retrieveContext } from '@/lib/spec-retrieval';
 
 export const runtime = 'nodejs';
@@ -43,6 +43,14 @@ export async function POST(req: Request): Promise<NextResponse> {
     const context = retrieveContext(body.spec, body.question);
     const rendered = renderContext(context, body.spec);
 
+    // Surfaced to the client so the answer can be checked against its sources.
+    const retrievedRules: RetrievedRule[] = context.blocks.slice(0, 12).map((block) => ({
+      ruleId: block.id,
+      section: block.section,
+      status: block.status ?? 'unknown',
+      text: block.text.length > 400 ? `${block.text.slice(0, 397)}…` : block.text,
+    }));
+
     // Nothing in the spec matched. Answer that honestly rather than sending an
     // empty extract and letting the model improvise from the question alone.
     if (!context.wholeDocument && context.blocks.length === 0) {
@@ -54,6 +62,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         specGap: 'The specification defines no rule covering this question.',
         caveat: null,
         retrieval: { rulesConsidered: parseRuleBlocks(body.spec).length, rulesSent: 0, wholeDocument: false },
+        retrievedRules: [],
       };
       return NextResponse.json(empty);
     }
@@ -67,6 +76,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         rulesSent: context.wholeDocument ? parseRuleBlocks(body.spec).length : context.blocks.length,
         wholeDocument: context.wholeDocument,
       },
+      retrievedRules,
     };
     return NextResponse.json(result);
   } catch (err) {

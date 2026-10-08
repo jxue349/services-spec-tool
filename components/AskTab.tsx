@@ -266,6 +266,36 @@ export function AskTab({
             )}
           </Panel>
 
+          {/*
+            The sources, not just the paraphrase.
+            A support agent needs to check the answer against the rules it came
+            from, and an answer that cites the wrong rule is only visibly wrong
+            if the right one is on screen next to it.
+          */}
+          {result.retrievedRules.length > 0 ? (
+            <details className="rounded-lg border border-line bg-panel">
+              <summary className="cursor-pointer px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-inkDim hover:text-ink">
+                Rules retrieved for this question ({result.retrieval.rulesSent}) — check the answer against them
+              </summary>
+              <ul className="divide-y divide-line/60 border-t border-line">
+                {result.retrievedRules.map((rule, i) => (
+                  <li key={`${rule.ruleId ?? i}`} className="px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {rule.ruleId ? <RuleChip rule={rule.ruleId} onReveal={onReveal} /> : null}
+                      <span
+                        className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${STATUS[rule.status].className}`}
+                      >
+                        {STATUS[rule.status].label}
+                      </span>
+                      <span className="font-mono text-[10px] text-inkDim">{rule.section}</span>
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-inkDim">{rule.text}</p>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+
           <p className="px-1 font-mono text-[10px] text-inkDim">
             {asked === '' ? '' : `“${asked}” · `}
             {result.retrieval.wholeDocument

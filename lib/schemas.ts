@@ -175,9 +175,24 @@ export const AskResponseSchema = z.object({
 export type AskResponse = z.infer<typeof AskResponseSchema>;
 export type AskCitation = AskResponse['citations'][number];
 
+export type RetrievedRule = {
+  ruleId: string | null;
+  section: string;
+  status: 'confirmed' | 'unverified' | 'open' | 'superseded' | 'unknown';
+  text: string;
+};
+
 export type AskResult = AskResponse & {
   /** Retrieval provenance, added server-side. */
   retrieval: { rulesConsidered: number; rulesSent: number; wholeDocument: boolean };
+  /**
+   * The rules actually sent to the model, highest ranked first.
+   *
+   * Shown in the UI so a reader can check the answer against its sources
+   * rather than trusting the paraphrase — and so a model that cites the wrong
+   * rule is visibly wrong instead of quietly wrong.
+   */
+  retrievedRules: RetrievedRule[];
 };
 
 export const GapRequestSchema = z.object({

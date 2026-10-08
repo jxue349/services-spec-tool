@@ -212,13 +212,24 @@ function askAnswer(prompt) {
   const weak = top.find((r) => r.status !== 'confirmed');
 
   return {
-    answer: `${statement}\n\n(Stub answer: extracted from ${best.id} in the retrieved rules. A real Glean credential gives a reasoned answer.)`,
+    answer: [
+      'NO MODEL CONFIGURED — this is not an answer, it is the closest rule found by word overlap.',
+      '',
+      `Closest match, ${best.id}:`,
+      statement,
+      '',
+      'Reading and combining these rules into an actual answer is the generation',
+      'half of RAG, and the stub has no model to do it. Configure a Glean',
+      'credential for real interpretation. Check the retrieved rules below —',
+      'the answer may well be in one of them.',
+    ].join('\n'),
     citations: top.map((r) => ({
       ruleId: r.id,
       status: r.status,
-      why: 'Matched the question against the retrieved rules.',
+      why: 'Shares wording with the question. Not an interpreted citation.',
     })),
-    confidence: best.overlap >= 3 ? 'high' : 'medium',
+    // A stub cannot interpret, so it is never allowed to look confident.
+    confidence: 'medium',
     specGap: null,
     caveat: weak
       ? `${weak.id} is marked ${weak.status} in the spec — escalate rather than asserting it to a customer.`

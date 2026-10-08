@@ -184,6 +184,24 @@ route answers that directly without calling the model.
 Scope: with a child spec selected, a toggle switches between asking that spec
 and asking the knowledge base.
 
+### Retrieval is half of it
+
+Ask is a RAG loop: **retrieve** the relevant rules, then **interpret** them
+into an answer. Retrieval is implemented here and tested. Interpretation is
+the model — and without a configured credential there is no model, so the dev
+stub cannot do it.
+
+The stub therefore does not pretend to answer. It returns the closest rule by
+word overlap, labelled as such, never claims high confidence, and points at
+the retrieved rules. A stub that produced fluent wrong answers would be worse
+than one that produces none, because a support agent cannot tell the
+difference.
+
+Every answer carries the rules that were retrieved, expandable under the
+answer. That matters beyond the stub: it lets a reader check a real model's
+answer against its sources, and makes an answer that cites the wrong rule
+visibly wrong rather than quietly wrong.
+
 ### The gap log
 
 A question the spec cannot answer is the most useful signal this tool
