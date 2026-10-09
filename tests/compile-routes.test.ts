@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { __resetGleanAuth, extractAnswer } from '@/lib/glean';
+import { __resetGleanAuth, extractAnswer } from '@/lib/providers/glean';
 import { __resetRateLimit } from '@/lib/ratelimit';
 import { POST as consistencyRoute } from '@/app/api/compile/consistency/route';
 import { POST as explorerRoute } from '@/app/api/compile/explorer/route';

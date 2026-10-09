@@ -1,9 +1,9 @@
-import type { ZodType } from 'zod';
-import { getCompilerEnv } from './env';
-import { SchemaValidationError, parseAndValidate } from './json';
+import { getCompilerEnv } from '../env';
+import { COMPILE_TIMEOUT_MS, isRetryableStatus, isTimeout } from './types';
+import type { CompilerProvider } from './types';
 
 /**
- * The "behavior compiler", backed by Glean's Chat API.
+ * Glean Chat as a compiler provider.
  *
  * Server-only. The Glean token is read from the environment here and never
  * crosses the network boundary to the browser.
@@ -17,23 +17,6 @@ import { SchemaValidationError, parseAndValidate } from './json';
  *    ./json.ts is load-bearing rather than belt-and-braces, and the corrective
  *    retry below does real work.
  */
-
-export const COMPILE_TIMEOUT_MS = 30_000;
-
-const JSON_ONLY_CONTRACT = [
-  'You are a behavior compiler. You read a Product Behavior Specification and emit',
-  'structured representations of it.',
-  '',
-  'Output contract — this is not negotiable:',
-  '- Respond with a single raw JSON object and NOTHING else. No preamble, no',
-  '  explanation, no code fences, no closing remark.',
-  '- Cite the spec rule IDs (R-xxx) that justify every conclusion, in the `rules` fields.',
-  '- Never invent a rule. If the spec does not define a behavior, say so explicitly as a',
-  '  spec gap rather than guessing what the product probably does.',
-  '- Use ONLY the specification given below. Do not use any other company document,',
-  '  ticket, wiki page, or message, and do not use general knowledge of how',
-  '  subscriptions usually work.',
-].join('\n');
 
 // --------------------------------------------------------------------------
 // Wire types — Glean's documented chat shapes, all fields optional because
@@ -79,11 +62,6 @@ export function extractAnswer(body: unknown): string {
 
   if (text === '') throw new GleanError(502, 'Glean chat response contained no answer text');
   return text;
-}
-
-function isRetryable(status: number): boolean {
-  // 408 request timeout and 429 rate limit are documented chat responses.
-  return status === 408 || status === 429 || status >= 500;
 }
 
 // --------------------------------------------------------------------------
@@ -151,7 +129,7 @@ async function bearerToken(env: ReturnType<typeof getCompilerEnv>): Promise<stri
   return cachedToken.value;
 }
 
-async function chatOnce(prompt: string): Promise<string> {
+async function chatOnce(systemPrompt: string, prompt: string): Promise<string> {
   const env = getCompilerEnv();
   const { baseUrl, agent, mode, actAs } = env;
 
@@ -175,7 +153,7 @@ async function chatOnce(prompt: string): Promise<string> {
         {
           author: 'USER',
           messageType: 'CONTENT',
-          fragments: [{ text: prompt }],
+          fragments: [{ text: `${systemPrompt}\n\n${prompt}` }],
         },
       ],
     }),
@@ -190,53 +168,25 @@ async function chatOnce(prompt: string): Promise<string> {
 }
 
 /** One transport-level retry, matching the previous provider's behavior. */
-async function chat(prompt: string): Promise<string> {
+async function chat(systemPrompt: string, prompt: string): Promise<string> {
   try {
-    return await chatOnce(prompt);
+    return await chatOnce(systemPrompt, prompt);
   } catch (err) {
     // A 401 while holding a cached OAuth token means it was revoked or expired
     // early: drop it and try once with a fresh one. A 401 on a static key is
     // fatal — a bad key will not get better.
     if (err instanceof GleanError && err.status === 401 && cachedToken !== null) {
       cachedToken = null;
-      return chatOnce(prompt);
+      return chatOnce(systemPrompt, prompt);
     }
 
-    const retryable =
-      (err instanceof GleanError && isRetryable(err.status)) ||
-      (err instanceof Error && /abort|timeout/i.test(err.name + err.message));
-
+    const retryable = (err instanceof GleanError && isRetryableStatus(err.status)) || isTimeout(err);
     if (!retryable) throw err;
-    return chatOnce(prompt);
+    return chatOnce(systemPrompt, prompt);
   }
 }
 
-/**
- * Sends `prompt`, validates the reply against `schema`, and retries once with
- * the validation error appended if the first reply does not conform.
- */
-export async function compile<T>(prompt: string, schema: ZodType<T>): Promise<T> {
-  const first = await chat(`${JSON_ONLY_CONTRACT}\n\n${prompt}`);
-
-  try {
-    return parseAndValidate(first, schema);
-  } catch (err) {
-    const detail =
-      err instanceof SchemaValidationError ? err.issues : err instanceof Error ? err.message : String(err);
-
-    const retryPrompt = [
-      JSON_ONLY_CONTRACT,
-      '',
-      prompt,
-      '',
-      '---',
-      'Your previous response could not be used. Problem:',
-      detail,
-      '',
-      'Return the corrected result as a single raw JSON object matching the requested',
-      'shape exactly. No prose, no code fences.',
-    ].join('\n');
-
-    return parseAndValidate(await chat(retryPrompt), schema);
-  }
-}
+export const gleanProvider: CompilerProvider = {
+  name: 'glean',
+  complete: (systemPrompt, userPrompt) => chat(systemPrompt, userPrompt),
+};

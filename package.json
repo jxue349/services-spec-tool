@@ -14,6 +14,7 @@
     "stub:glean": "node tools/glean-stub.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1148.0",
     "@octokit/rest": "^22.0.0",
     "mermaid": "^11.12.0",
     "next": "^15.5.4",

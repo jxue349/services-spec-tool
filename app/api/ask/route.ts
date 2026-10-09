@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { compile } from '@/lib/glean';
+import { compile } from '@/lib/compiler';
 import { apiError, apiErrorFromUnknown, logServerError, newRequestId } from '@/lib/errors';
 import { BadRequestError, readJson } from '@/lib/http';
 import { JsonExtractionError, SchemaValidationError } from '@/lib/json';

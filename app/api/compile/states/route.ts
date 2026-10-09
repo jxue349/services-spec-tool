@@ -1,5 +1,5 @@
 import type { NextResponse } from 'next/server';
-import { compile } from '@/lib/glean';
+import { compile } from '@/lib/compiler';
 import { runCompileRoute } from '@/lib/compile-route';
 import { stateMachinePrompt } from '@/lib/prompts';
 import { SpecOnlyRequestSchema, StateMachineSchema } from '@/lib/schemas';

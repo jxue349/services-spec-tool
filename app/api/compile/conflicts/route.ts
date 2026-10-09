@@ -1,5 +1,5 @@
 import type { NextResponse } from 'next/server';
-import { compile } from '@/lib/glean';
+import { compile } from '@/lib/compiler';
 import { runCompileRoute } from '@/lib/compile-route';
 import { conflictPrompt } from '@/lib/prompts';
 import { ConflictReportSchema, ConflictRequestSchema } from '@/lib/schemas';

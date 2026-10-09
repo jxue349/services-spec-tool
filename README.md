@@ -37,6 +37,10 @@ key, token, owner, or repo name reaches the client bundle.
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
+| `COMPILER_PROVIDER` | no | `glean` | Which LLM backs the compiler: `glean` or `bedrock` |
+| `BEDROCK_MODEL_ID` | bedrock only | — | e.g. `openai.gpt-5.6-luna` |
+| `AWS_REGION` | no | `us-west-2` | Region the Bedrock model is enabled in |
+| `BEDROCK_TEMPERATURE` | no | `0` | 0 keeps compiles reproducible |
 | `GLEAN_CLIENT_ID` + `GLEAN_CLIENT_SECRET` | yes† | — | OAuth client for the `client_credentials` grant. Preferred — see below |
 | `GLEAN_SCOPE` | no | `chat` | Scope requested for the client-credentials token |
 | `GLEAN_API_KEY` | yes† | — | Alternative: long-lived platform token from [app.glean.com/admin/platform/token](https://app.glean.com/admin/platform/token) |
@@ -81,6 +85,37 @@ until a minute before expiry, and re-mints once if a cached token is rejected.
 challenge pointing at `/oauth`. MCP is a protocol for letting an *agent*
 discover tools; this app makes exactly one known call, so MCP would add an
 OAuth-session layer for no benefit over a single `fetch`.
+
+### Choosing a compiler provider
+
+`COMPILER_PROVIDER` selects the LLM. The provider supplies text; the JSON-only
+contract, strict parse, schema validation and corrective retry live once in
+`lib/compiler.ts`, so adding a provider means adding a transport, not
+re-deriving the parsing rules.
+
+**Bedrock** (`COMPILER_PROVIDER=bedrock`) is called through the **Converse
+API**, which gives one request and response shape across every model Bedrock
+hosts — switching between an OpenAI, Anthropic or Amazon model is a change of
+`BEDROCK_MODEL_ID` and nothing else. `InvokeModel` would have meant a payload
+branch per vendor.
+
+**Credentials are deliberately not this app's business.** The AWS SDK resolves
+them from its own provider chain — environment, shared config, SSO, or an
+instance/task role — so no AWS secret is ever read, stored or logged here. In
+AWS, attach a role with `bedrock:InvokeModel` and set no keys at all. Compare
+that with the Glean path, which has to hold a token.
+
+Two first-run failures are called out explicitly rather than retried, because
+neither improves on a second attempt:
+
+- `ValidationException` / `ResourceNotFoundException` → the model id is not
+  available in that region. Some models are only reachable via a cross-region
+  inference profile, where the id carries a prefix (`us.openai.gpt-5.6-luna`).
+  The error names the model and region so this is a one-line fix.
+- `AccessDeniedException` → the IAM policy or Bedrock model access is missing.
+
+Throttles and 5xx get one retry. Errors never echo the prompt, because the
+prompt contains the spec.
 
 ### Why `agent=GPT`
 

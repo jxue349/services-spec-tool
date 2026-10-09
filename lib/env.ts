@@ -40,6 +40,50 @@ export type GleanAgent = 'GPT' | 'DEFAULT' | 'FAST' | 'ADVANCED';
 
 const GLEAN_AGENTS: GleanAgent[] = ['GPT', 'DEFAULT', 'FAST', 'ADVANCED'];
 
+/** Which LLM backs the compiler. */
+export type CompilerProviderName = 'glean' | 'bedrock';
+
+const PROVIDERS: CompilerProviderName[] = ['glean', 'bedrock'];
+
+export function getCompilerProvider(): CompilerProviderName {
+  const raw = process.env.COMPILER_PROVIDER?.trim().toLowerCase() || 'glean';
+  if (!(PROVIDERS as string[]).includes(raw)) {
+    throw new InvalidEnvError(`COMPILER_PROVIDER must be one of ${PROVIDERS.join(', ')}`);
+  }
+  return raw as CompilerProviderName;
+}
+
+export type BedrockEnv = {
+  modelId: string;
+  region: string;
+  temperature: number;
+};
+
+/**
+ * Bedrock configuration.
+ *
+ * No credentials here on purpose: the AWS SDK resolves those from its own
+ * provider chain (environment, shared config, SSO, instance or task role), so
+ * this app never reads, stores or logs an AWS secret. On AWS the correct
+ * answer is a role rather than a key, and the SDK already finds one.
+ */
+export function getBedrockEnv(): BedrockEnv {
+  const required = require_(['BEDROCK_MODEL_ID']);
+
+  const rawTemp = process.env.BEDROCK_TEMPERATURE?.trim();
+  const temperature = rawTemp === undefined || rawTemp === '' ? 0 : Number(rawTemp);
+  if (!Number.isFinite(temperature) || temperature < 0 || temperature > 1) {
+    throw new InvalidEnvError('BEDROCK_TEMPERATURE must be a number between 0 and 1');
+  }
+
+  return {
+    modelId: pick(required, 'BEDROCK_MODEL_ID'),
+    region: process.env.AWS_REGION?.trim() || process.env.AWS_DEFAULT_REGION?.trim() || 'us-west-2',
+    // Compiling a spec wants the same answer twice, not a creative one.
+    temperature,
+  };
+}
+
 export type CompilerEnv = {
   /**
    * How we authenticate to Glean. Both land on the same

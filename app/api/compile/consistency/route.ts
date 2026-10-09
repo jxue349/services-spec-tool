@@ -1,5 +1,5 @@
 import type { NextResponse } from 'next/server';
-import { compile } from '@/lib/glean';
+import { compile } from '@/lib/compiler';
 import { runCompileRoute } from '@/lib/compile-route';
 import { consistencyPrompt } from '@/lib/prompts';
 import { ConsistencyRequestSchema, ConsistencySchema } from '@/lib/schemas';

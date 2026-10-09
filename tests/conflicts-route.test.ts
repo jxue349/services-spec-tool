@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { __resetGleanAuth } from '@/lib/glean';
+import { __resetGleanAuth } from '@/lib/providers/glean';
 import { __resetRateLimit } from '@/lib/ratelimit';
 import { POST as conflictsRoute } from '@/app/api/compile/conflicts/route';
 
