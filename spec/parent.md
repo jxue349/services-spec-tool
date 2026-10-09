@@ -354,3 +354,7 @@ Implementation evidence: [ChooseCamerasV2DataSource.swift](https://github.com/wy
 | 2026-10-06 | **v3.0 re-distillation** from the Confluence page of record (as-of 2026-10-02). New rule domains: DUP (duplicate plans), SURF (IAP surfaces), BW (Bird Watch), MAP (product-ID mapping); expanded LIFE (channels, platform change/proration, WSC alignment SVCWEB-5716), PRICE (price matrix + history), FEAT (canonical tier feature table, Window Cam/Cam Base Free, Wyze Stories naming), MON-004 (tab priority), LEGACY-005 (CPL origin). Supersessions: ENT-008 → ENT-011 (no self-serve rebind in P0); ADDON-001 reworded (Bird Watch is standalone, Cloud CVR is the third add-on); UPSELL-007 (no promised refund). Register: V-03, V-05, V-11 resolved; V-02 re-scoped to the package-detection conflict; V-16–V-23 added. | Jing — re-distill from updated KB page |
 | 2026-09-30 | v2.0: restructured narrative KB into atomic rules with status + source; governance model + register V-01…V-15. | Rule-based restructure |
 | 2026-09-29 | v1.0: initial consolidated narrative KB. | Initial consolidation |
+
+## Merged from cam-plus
+
+- **PROAI-001** — A device-level upsell prompt is shown at most once per billing period.
