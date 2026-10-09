@@ -7,7 +7,7 @@
 
 ---
 
-## 0. How this knowledge base works (governance rules) test
+## 0. How this knowledge base works (governance rules) 
 
 | ID | Rule | Status |
 |---|---|---|
