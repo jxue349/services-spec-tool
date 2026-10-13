@@ -1,4 +1,5 @@
 import { getCompilerEnv } from '../env';
+import type { CompilerEnv } from '../env';
 import { COMPILE_TIMEOUT_MS, isRetryableStatus, isTimeout } from './types';
 import type { CompilerProvider } from './types';
 
@@ -115,7 +116,7 @@ async function fetchClientCredentialsToken(
   return { value: body.access_token, expiresAt: Date.now() + Math.max(0, lifetimeMs - TOKEN_SKEW_MS) };
 }
 
-async function bearerToken(env: ReturnType<typeof getCompilerEnv>): Promise<string> {
+export async function bearerToken(env: ReturnType<typeof getCompilerEnv>): Promise<string> {
   if (env.auth.kind === 'static') return env.auth.apiKey;
 
   if (cachedToken !== null && Date.now() < cachedToken.expiresAt) return cachedToken.value;
@@ -129,16 +130,21 @@ async function bearerToken(env: ReturnType<typeof getCompilerEnv>): Promise<stri
   return cachedToken.value;
 }
 
-async function chatOnce(systemPrompt: string, prompt: string): Promise<string> {
-  const env = getCompilerEnv();
-  const { baseUrl, agent, mode, actAs } = env;
-
+/** Auth + content-type headers for a Glean call. */
+export async function gleanHeaders(env: CompilerEnv): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     authorization: `Bearer ${await bearerToken(env)}`,
     'content-type': 'application/json',
   };
   // Required when the token is a global (not user-scoped) Glean token.
-  if (actAs !== undefined) headers['X-Glean-ActAs'] = actAs;
+  if (env.actAs !== undefined) headers['X-Glean-ActAs'] = env.actAs;
+  return headers;
+}
+
+async function chatOnce(systemPrompt: string, prompt: string): Promise<string> {
+  const env = getCompilerEnv();
+  const { baseUrl, agent, mode } = env;
+  const headers = await gleanHeaders(env);
 
   const res = await fetch(`${baseUrl}/rest/api/v1/chat`, {
     method: 'POST',

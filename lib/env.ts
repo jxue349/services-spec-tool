@@ -104,6 +104,14 @@ export type CompilerEnv = {
   mode: string;
   /** Only set when the credential is global rather than user-scoped. */
   actAs: string | undefined;
+  /**
+   * When true, Ask also queries Glean's company knowledge and shows it as a
+   * clearly separate second opinion. Off by default: the spec answer must
+   * stay provably spec-derived, and this is the one thing that could blur it.
+   */
+  companyKnowledge: boolean;
+  /** Retrieval agent used for that second opinion only. */
+  companyKnowledgeAgent: GleanAgent;
 };
 
 export class InvalidEnvError extends Error {
@@ -226,11 +234,23 @@ export function getCompilerEnv(): CompilerEnv {
     throw new InvalidEnvError(`GLEAN_AGENT must be one of ${GLEAN_AGENTS.join(', ')}`);
   }
 
+  // The second-opinion lookup is the one place retrieval is wanted, so it
+  // must not be GPT — that agent does not retrieve anything.
+  const knowledgeAgent = (process.env.GLEAN_COMPANY_KNOWLEDGE_AGENT?.trim().toUpperCase() || 'DEFAULT') as GleanAgent;
+  if (!GLEAN_AGENTS.includes(knowledgeAgent)) {
+    throw new InvalidEnvError(`GLEAN_COMPANY_KNOWLEDGE_AGENT must be one of ${GLEAN_AGENTS.join(', ')}`);
+  }
+  if (knowledgeAgent === 'GPT') {
+    throw new InvalidEnvError('GLEAN_COMPANY_KNOWLEDGE_AGENT cannot be GPT — GPT does not retrieve company knowledge');
+  }
+
   return {
     auth,
     baseUrl,
     agent,
     mode: process.env.GLEAN_MODE?.trim().toUpperCase() || 'DEFAULT',
     actAs: process.env.GLEAN_ACT_AS?.trim() || undefined,
+    companyKnowledge: (process.env.GLEAN_COMPANY_KNOWLEDGE?.trim().toLowerCase() ?? 'false') === 'true',
+    companyKnowledgeAgent: knowledgeAgent,
   };
 }

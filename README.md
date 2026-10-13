@@ -237,6 +237,35 @@ answer. That matters beyond the stub: it lets a reader check a real model's
 answer against its sources, and makes an answer that cites the wrong rule
 visibly wrong rather than quietly wrong.
 
+### Company knowledge, as a second opinion
+
+With `GLEAN_COMPANY_KNOWLEDGE=true`, Ask also puts the question to Glean's
+**retrieval** agent against Confluence, Jira and Slack, and shows the result
+in a separate panel labelled *not from the spec*.
+
+This is the one place retrieval is wanted, and it is deliberately the
+opposite of the `agent=GPT` rule that governs the spec answer. The two never
+share a call, a prompt, or a panel. Merging them would destroy the only
+guarantee this tool makes — that a reader can tell which claims the
+specification actually backs.
+
+It earns its place because the knowledge base is distilled *from* a Confluence
+page of record. When the two disagree, one of them is stale, and that is
+precisely the signal a spec owner needs. Observed on the first real run:
+
+> **Spec:** lists Cam V3, Cam V3 Pr, and Cam Pan V3 as supported *at launch*;
+> does not confirm the list is still current.
+>
+> **Company knowledge:** the current support matrix marks Cam V3, Cam V3
+> **Pro**, and Pan V3 as supported; other models are TBD.
+
+The second answer both confirms the list and resolves the currency question —
+and exposes a typo in the spec (`Cam V3 Pr`).
+
+The lookup is best-effort: it runs in parallel with the spec answer and
+resolves to null on any failure, so it can never take down an answer the
+specification already gave.
+
 ### The gap log
 
 A question the spec cannot answer is the most useful signal this tool

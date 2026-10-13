@@ -7,6 +7,7 @@ import { askPrompt } from '@/lib/prompts';
 import { checkRateLimit, clientKey } from '@/lib/ratelimit';
 import { AskRequestSchema, AskResponseSchema } from '@/lib/schemas';
 import type { AskResult, RetrievedRule } from '@/lib/schemas';
+import { askCompanyKnowledge } from '@/lib/providers/glean-knowledge';
 import { parseRuleBlocks, renderContext, retrieveContext } from '@/lib/spec-retrieval';
 
 export const runtime = 'nodejs';
@@ -63,11 +64,19 @@ export async function POST(req: Request): Promise<NextResponse> {
         caveat: null,
         retrieval: { rulesConsidered: parseRuleBlocks(body.spec).length, rulesSent: 0, wholeDocument: false },
         retrievedRules: [],
+        // Even with nothing in the spec, company knowledge may know.
+        companyKnowledge: await askCompanyKnowledge(body.question),
       };
       return NextResponse.json(empty);
     }
 
-    const answer = await compile(askPrompt(rendered, body.question, body.specLabel), AskResponseSchema);
+    // Run both at once: the spec answer and the separate second opinion.
+    // The knowledge lookup resolves to null on any failure, so it can never
+    // take down an answer the specification already gave.
+    const [answer, companyKnowledge] = await Promise.all([
+      compile(askPrompt(rendered, body.question, body.specLabel), AskResponseSchema),
+      askCompanyKnowledge(body.question),
+    ]);
 
     const result: AskResult = {
       ...answer,
@@ -77,6 +86,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         wholeDocument: context.wholeDocument,
       },
       retrievedRules,
+      companyKnowledge,
     };
     return NextResponse.json(result);
   } catch (err) {

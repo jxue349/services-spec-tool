@@ -193,6 +193,12 @@ export type AskResult = AskResponse & {
    * rule is visibly wrong instead of quietly wrong.
    */
   retrievedRules: RetrievedRule[];
+  /**
+   * Glean's company-knowledge answer, when enabled. Deliberately a separate
+   * field, never merged into `answer`: a reader must always be able to tell
+   * which claims the specification actually backs.
+   */
+  companyKnowledge: { answer: string; sources: { title: string; url: string }[] } | null;
 };
 
 export const GapRequestSchema = z.object({

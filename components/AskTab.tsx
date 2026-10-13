@@ -267,6 +267,46 @@ export function AskTab({
           </Panel>
 
           {/*
+            Company knowledge, kept visibly apart from the spec answer.
+            Same question, different source — Confluence, Jira, Slack rather
+            than the specification. Merging the two would destroy the one
+            guarantee this tool makes, so it gets its own panel, its own
+            colour, and a label saying it is not spec-derived.
+          */}
+          {result.companyKnowledge ? (
+            <Panel className="border-secondary/40 bg-secondary/5 p-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <SectionLabel>Also found in company knowledge</SectionLabel>
+                <span className="font-mono text-[10px] text-secondary">not from the spec</span>
+              </div>
+
+              <p className="mt-1 text-xs leading-relaxed text-ink">{result.companyKnowledge.answer}</p>
+
+              {result.companyKnowledge.sources.length > 0 ? (
+                <ul className="mt-2 space-y-1">
+                  {result.companyKnowledge.sources.map((source) => (
+                    <li key={source.url}>
+                      <a
+                        href={source.url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="text-[11px] text-secondary underline underline-offset-2 hover:text-ink"
+                      >
+                        {source.title}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <p className="mt-2 text-[10px] leading-relaxed text-inkDim">
+                If this disagrees with the spec answer above, one of them is stale — that is worth flagging to the
+                knowledge-base owners rather than picking a side.
+              </p>
+            </Panel>
+          ) : null}
+
+          {/*
             The sources, not just the paraphrase.
             A support agent needs to check the answer against the rules it came
             from, and an answer that cites the wrong rule is only visibly wrong
