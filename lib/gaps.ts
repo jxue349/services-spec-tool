@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * The gap log: questions the knowledge base could not answer.
  *
@@ -8,7 +10,7 @@
 
 export const GAP_LABEL = 'kb-gap';
 
-/** One line, so the same question collides on title and joins its issue. */
+/** Default title when the user does not write one. */
 export function gapTitle(question: string): string {
   const flat = question.replace(/\s+/g, ' ').trim();
   const clipped = flat.length > 120 ? `${flat.slice(0, 117)}…` : flat;
@@ -16,7 +18,33 @@ export function gapTitle(question: string): string {
 }
 
 /**
- * Recently filed gaps, by title.
+ * The identity of a gap: the question, not the title.
+ *
+ * Titles are user-editable, so keying dedupe on them would let the same
+ * question be filed twice simply because two people worded the heading
+ * differently. The question is what makes two reports the same report.
+ */
+export function gapKey(question: string): string {
+  const normalised = question.replace(/\s+/g, ' ').trim().toLowerCase();
+  return createHash('sha256').update(normalised).digest('hex').slice(0, 16);
+}
+
+/**
+ * Marker embedded in the issue body so a gap stays findable however its title
+ * is edited — by this app or by a human afterwards.
+ */
+export function gapMarker(question: string): string {
+  return `<!-- kb-gap-key: ${gapKey(question)} -->`;
+}
+
+/** Finds our marker in an existing issue body. */
+export function markerIn(body: string | null | undefined): string | null {
+  const hit = /<!--\s*kb-gap-key:\s*([0-9a-f]{16})\s*-->/.exec(body ?? '');
+  return hit?.[1] ?? null;
+}
+
+/**
+ * Recently filed gaps, by key.
  *
  * GitHub's issue list is eventually consistent: an issue created a moment ago
  * is not reliably returned by the next list call, so two identical flags a few
@@ -31,19 +59,8 @@ const RECENT_TTL_MS = 10 * 60_000;
 
 const recentGaps = new Map<string, { url: string; number: number; at: number }>();
 
-/**
- * The single notion of "same question", used by both dedupe paths.
- *
- * The memo and the API check must agree: if one is case-sensitive and the
- * other is not, the same question dedupes or duplicates depending purely on
- * which path happens to catch it.
- */
-export function gapKey(title: string): string {
-  return title.trim().toLowerCase();
-}
-
-export function recallRecentGap(title: string, now: number = Date.now()): { url: string; number: number } | null {
-  const key = gapKey(title);
+export function recallRecentGap(question: string, now: number = Date.now()): { url: string; number: number } | null {
+  const key = gapKey(question);
   const hit = recentGaps.get(key);
   if (hit === undefined) return null;
   if (now - hit.at > RECENT_TTL_MS) {
@@ -53,8 +70,12 @@ export function recallRecentGap(title: string, now: number = Date.now()): { url:
   return { url: hit.url, number: hit.number };
 }
 
-export function rememberGap(title: string, issue: { url: string; number: number }, now: number = Date.now()): void {
-  recentGaps.set(gapKey(title), { ...issue, at: now });
+export function rememberGap(
+  question: string,
+  issue: { url: string; number: number },
+  now: number = Date.now(),
+): void {
+  recentGaps.set(gapKey(question), { ...issue, at: now });
 }
 
 /** Test-only reset. */

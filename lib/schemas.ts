@@ -203,6 +203,9 @@ export type AskResult = AskResponse & {
 
 export const GapRequestSchema = z.object({
   question: z.string().min(1).max(ASK_QUESTION_MAX_CHARS),
+  /** Both optional: blank means the auto-generated title and no extra note. */
+  title: z.string().max(200).optional(),
+  description: z.string().max(4_000).optional(),
   specPath: z.string().min(1).max(400),
   specLabel: z.string().min(1).max(120),
   answer: z.string().max(4_000).optional(),

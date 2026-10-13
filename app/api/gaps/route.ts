@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
 import { followersPathFor, parseFollowers } from '@/lib/followers';
-import { GAP_LABEL, gapTitle, recallRecentGap, rememberGap } from '@/lib/gaps';
+import { GAP_LABEL, gapMarker, gapTitle, recallRecentGap, rememberGap } from '@/lib/gaps';
 import { createSpecRepoClient } from '@/lib/github';
 import { BadRequestError, readJson } from '@/lib/http';
 import { checkRateLimit, clientKey } from '@/lib/ratelimit';
@@ -55,10 +55,11 @@ export async function POST(req: Request): Promise<NextResponse> {
     const env = getSpecEnv();
     const client = createSpecRepoClient(env);
 
-    const title = gapTitle(body.question);
+    // A user-supplied title is display only; identity is always the question.
+    const title = body.title?.trim() || gapTitle(body.question);
 
     // Covers the seconds-old duplicate the API list cannot see yet.
-    const recent = recallRecentGap(title);
+    const recent = recallRecentGap(body.question);
     if (recent !== null) {
       const seen: GapResponse = { issueUrl: recent.url, issueNumber: recent.number, alreadyLogged: true };
       return NextResponse.json(seen);
@@ -66,7 +67,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     // Asking the same thing twice should join the existing issue, not add
     // another row to the owners' backlog.
-    const existing = await client.findOpenGapIssue(title, GAP_LABEL);
+    const existing = await client.findOpenGapIssue(body.question, GAP_LABEL);
     if (existing !== null) {
       rememberGap(title, existing);
       const already: GapResponse = { issueUrl: existing.url, issueNumber: existing.number, alreadyLogged: true };
@@ -82,7 +83,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       labels: [GAP_LABEL],
     });
 
-    rememberGap(title, issue);
+    rememberGap(body.question, issue);
     const created: GapResponse = { issueUrl: issue.url, issueNumber: issue.number, alreadyLogged: false };
     return NextResponse.json(created);
   } catch (err) {
@@ -106,6 +107,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
 function renderGapBody(input: {
   question: string;
+  description?: string;
   specPath: string;
   specLabel: string;
   answer?: string;
@@ -115,17 +117,30 @@ function renderGapBody(input: {
   followers: string[];
 }): string {
   const lines = [
+    // Identity marker: lets the same question be found again however the
+    // title is later edited. Invisible when GitHub renders the body.
+    gapMarker(input.question),
+    '',
     'A question was asked in AI Spec Explorer that the specification could not answer.',
     '',
     '## Question',
     '',
     `> ${input.question.replace(/\n/g, '\n> ')}`,
     '',
+  ];
+
+  // The reporter's own words go high up — they are the most useful thing here
+  // when someone bothered to write them.
+  if (input.description !== undefined && input.description.trim() !== '') {
+    lines.push('## Notes from the reporter', '', input.description.trim(), '');
+  }
+
+  lines.push(
     '## Asked against',
     '',
     `\`${input.specPath}\` — ${input.specLabel}`,
     '',
-  ];
+  );
 
   if (typeof input.rulesConsidered === 'number') {
     lines.push(

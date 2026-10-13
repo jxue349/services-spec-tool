@@ -53,6 +53,9 @@ export function AskTab({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
+  const [composing, setComposing] = useState(false);
+  const [gapTitleInput, setGapTitleInput] = useState('');
+  const [gapDescription, setGapDescription] = useState('');
   const [flagging, setFlagging] = useState(false);
   const [flagged, setFlagged] = useState<GapResponse | null>(null);
   const [flagError, setFlagError] = useState<unknown>(null);
@@ -71,6 +74,9 @@ export function AskTab({
     setAsked(trimmed);
     setFlagged(null);
     setFlagError(null);
+    setComposing(false);
+    setGapTitleInput('');
+    setGapDescription('');
     try {
       // Asking the parent while a child is selected reads it fresh, so the
       // answer reflects the knowledge base as it stands right now.
@@ -83,6 +89,13 @@ export function AskTab({
     }
   };
 
+  // Mirrors the server's gapTitle(), so the placeholder shows exactly what
+  // will be used when the field is left blank.
+  const defaultGapTitle = (() => {
+    const flat = asked.replace(/\s+/g, ' ').trim();
+    return `KB gap: ${flat.length > 120 ? `${flat.slice(0, 117)}…` : flat}`;
+  })();
+
   const flag = async () => {
     if (result === null || asked === '') return;
     setFlagging(true);
@@ -91,6 +104,8 @@ export function AskTab({
       setFlagged(
         await flagGap({
           question: asked,
+          ...(gapTitleInput.trim() !== '' ? { title: gapTitleInput.trim() } : {}),
+          ...(gapDescription.trim() !== '' ? { description: gapDescription.trim() } : {}),
           specPath: askingParent ? spec.parentPath : spec.specPath,
           specLabel: scopeLabel,
           answer: result.answer,
@@ -253,12 +268,58 @@ export function AskTab({
                   Issue #{flagged.issueNumber} →
                 </a>
               </div>
+            ) : composing ? (
+              /*
+                Title and description are both optional. Blank means the
+                auto-generated title and no note, which is the common case —
+                so the form opens with empty fields and a visible default
+                rather than demanding input before anything can be logged.
+              */
+              <div className="mt-3 space-y-2">
+                <label className="block space-y-1">
+                  <SectionLabel>Title (optional)</SectionLabel>
+                  <input
+                    autoFocus
+                    value={gapTitleInput}
+                    maxLength={200}
+                    onChange={(e) => setGapTitleInput(e.target.value)}
+                    placeholder={defaultGapTitle}
+                    className="w-full rounded-md border border-line bg-panelAlt px-2 py-1.5 text-xs text-ink outline-none focus:border-accent/60"
+                  />
+                  <p className="font-mono text-[10px] text-inkDim">
+                    {gapTitleInput.trim() === '' ? `defaults to: ${defaultGapTitle}` : ' '}
+                  </p>
+                </label>
+
+                <label className="block space-y-1">
+                  <SectionLabel>Description (optional)</SectionLabel>
+                  <textarea
+                    value={gapDescription}
+                    maxLength={4000}
+                    rows={3}
+                    onChange={(e) => setGapDescription(e.target.value)}
+                    placeholder="What were you actually trying to find out? Anything the owners should know — a customer ticket, where you looked, what you expected."
+                    className="scroll-thin w-full resize-none rounded-md border border-line bg-panelAlt px-2 py-1.5 text-xs leading-relaxed text-ink outline-none focus:border-accent/60"
+                  />
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <Button variant="primary" onClick={() => void flag()} loading={flagging}>
+                    Log it
+                  </Button>
+                  <Button onClick={() => setComposing(false)} disabled={flagging}>
+                    Cancel
+                  </Button>
+                  <span className="font-mono text-[10px] text-inkDim">
+                    the question, rules retrieved and spec are attached automatically
+                  </span>
+                </div>
+              </div>
             ) : (
               <div className="mt-3">
                 <Button
                   variant={result.confidence === 'none' ? 'primary' : 'ghost'}
-                  onClick={() => void flag()}
-                  loading={flagging}
+                  onClick={() => setComposing(true)}
                 >
                   Flag to knowledge-base owners
                 </Button>

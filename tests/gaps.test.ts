@@ -25,7 +25,7 @@ vi.mock('@octokit/rest', () => ({
 }));
 
 import { POST as gapsRoute } from '@/app/api/gaps/route';
-import { GAP_LABEL, __resetRecentGaps, gapTitle } from '@/lib/gaps';
+import { GAP_LABEL, __resetRecentGaps, gapMarker, gapTitle } from '@/lib/gaps';
 
 const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
 
@@ -104,7 +104,14 @@ describe('POST /api/gaps', () => {
 
   it('joins an existing open issue instead of filing a duplicate', async () => {
     issuesList.mockResolvedValue({
-      data: [{ title: gapTitle(QUESTION), html_url: 'https://github.com/o/r/issues/7', number: 7 }],
+      data: [
+        {
+          title: gapTitle(QUESTION),
+          body: `${gapMarker(QUESTION)}\n\nA question was asked...`,
+          html_url: 'https://github.com/o/r/issues/7',
+          number: 7,
+        },
+      ],
     });
 
     const res = await gapsRoute(post(VALID));
@@ -116,10 +123,96 @@ describe('POST /api/gaps', () => {
 
   it('matches duplicates case- and whitespace-insensitively', async () => {
     issuesList.mockResolvedValue({
-      data: [{ title: gapTitle(QUESTION).toUpperCase(), html_url: 'https://github.com/o/r/issues/7', number: 7 }],
+      data: [
+        {
+          title: 'anything at all',
+          body: gapMarker(QUESTION),
+          html_url: 'https://github.com/o/r/issues/7',
+          number: 7,
+        },
+      ],
     });
 
     await gapsRoute(post({ ...VALID, question: `  ${QUESTION.toUpperCase()}  ` }));
+    expect(issuesCreate).not.toHaveBeenCalled();
+  });
+
+  it('dedupes on the question even when the titles differ', async () => {
+    // The whole reason identity moved off the title: it is user-editable, so
+    // two people wording the heading differently must not file two issues.
+    issuesList.mockResolvedValue({
+      data: [
+        {
+          title: 'Someone else phrased this completely differently',
+          body: gapMarker(QUESTION),
+          html_url: 'https://github.com/o/r/issues/7',
+          number: 7,
+        },
+      ],
+    });
+
+    const res = await gapsRoute(post({ ...VALID, title: 'My own wording for the same question' }));
+    const body = (await res.json()) as { issueNumber: number; alreadyLogged: boolean };
+
+    expect(body).toMatchObject({ issueNumber: 7, alreadyLogged: true });
+    expect(issuesCreate).not.toHaveBeenCalled();
+  });
+
+  it('ignores an unrelated kb-gap issue', async () => {
+    issuesList.mockResolvedValue({
+      data: [
+        { title: 'KB gap: something else', body: gapMarker('a different question'), html_url: 'u', number: 3 },
+      ],
+    });
+
+    await gapsRoute(post(VALID));
+    expect(issuesCreate).toHaveBeenCalledOnce();
+  });
+});
+
+describe('optional title and description', () => {
+  it('uses the auto-generated title when none is given', async () => {
+    await gapsRoute(post(VALID));
+    const issue = issuesCreate.mock.calls[0]?.[0] as { title: string };
+    expect(issue.title).toBe(gapTitle(QUESTION));
+  });
+
+  it('uses the reporter’s title when they write one', async () => {
+    await gapsRoute(post({ ...VALID, title: 'Cloud CVR camera support is undocumented' }));
+    const issue = issuesCreate.mock.calls[0]?.[0] as { title: string };
+    expect(issue.title).toBe('Cloud CVR camera support is undocumented');
+  });
+
+  it('falls back to the default when the title is only whitespace', async () => {
+    await gapsRoute(post({ ...VALID, title: '   ' }));
+    const issue = issuesCreate.mock.calls[0]?.[0] as { title: string };
+    expect(issue.title).toBe(gapTitle(QUESTION));
+  });
+
+  it('puts the reporter’s description above the machine-generated context', async () => {
+    await gapsRoute(post({ ...VALID, description: 'Customer ticket 12345 asked this.' }));
+    const issue = issuesCreate.mock.calls[0]?.[0] as { body: string };
+
+    expect(issue.body).toContain('Notes from the reporter');
+    expect(issue.body).toContain('Customer ticket 12345 asked this.');
+    expect(issue.body.indexOf('Notes from the reporter')).toBeLessThan(issue.body.indexOf('## Retrieval'));
+  });
+
+  it('omits the notes section entirely when no description is given', async () => {
+    await gapsRoute(post(VALID));
+    const issue = issuesCreate.mock.calls[0]?.[0] as { body: string };
+    expect(issue.body).not.toContain('Notes from the reporter');
+  });
+
+  it('always embeds the identity marker so the gap stays findable', async () => {
+    await gapsRoute(post({ ...VALID, title: 'anything' }));
+    const issue = issuesCreate.mock.calls[0]?.[0] as { body: string };
+    expect(issue.body).toContain(gapMarker(QUESTION));
+  });
+
+  it('rejects an over-long title', async () => {
+    const res = await gapsRoute(post({ ...VALID, title: 'x'.repeat(201) }));
+    expect(res.status).toBe(400);
     expect(issuesCreate).not.toHaveBeenCalled();
   });
 

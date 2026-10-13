@@ -279,8 +279,19 @@ Issues rather than pull requests: a gap is a question to be answered, not a
 change to merge, and it needs somewhere to be discussed before anyone knows
 what the rule should say.
 
+Both a **title** and a **description** are optional on the flag. Left blank,
+the title is generated from the question and no note is added — the common
+case, so the form opens empty with the default shown rather than demanding
+input. A description, when written, goes near the top of the issue above the
+machine-generated context, because a reporter who bothered to explain
+themselves has supplied the most useful thing in the report.
+
 Asking the same question twice joins the existing issue instead of filing a
-duplicate. That check is in two places on purpose — GitHub's issue list is
+duplicate. Identity is the **question**, not the title: the title is
+user-editable, so keying on it would let one question be filed twice just
+because two people worded the heading differently. Each issue carries an
+invisible `<!-- kb-gap-key: … -->` marker derived from the question, and that
+is what dedupe matches. That check is in two places on purpose — GitHub's issue list is
 eventually consistent, so an issue filed seconds ago is not reliably returned
 by the next list call, and the API check alone files duplicates. A short
 in-process memo covers that window. Both paths share one definition of "same

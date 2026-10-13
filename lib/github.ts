@@ -1,6 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import type { SpecEnv } from './env';
-import { gapKey } from './gaps';
+import { gapKey, markerIn } from './gaps';
 import type { CommitResponse, HistoryEntry, SpecResponse } from './schemas';
 
 /**
@@ -38,7 +38,7 @@ export interface SpecRepoClient {
   requestReviewers(prNumber: number, reviewers: string[]): Promise<{ requested: string[]; refused: string[] }>;
   updatePullRequestBody(prNumber: number, body: string): Promise<void>;
   /** An already-open gap issue for this exact question, if there is one. */
-  findOpenGapIssue(title: string, label: string): Promise<{ url: string; number: number } | null>;
+  findOpenGapIssue(question: string, label: string): Promise<{ url: string; number: number } | null>;
   createIssue(args: { title: string; body: string; labels: string[] }): Promise<{ url: string; number: number }>;
   lastCommitForPath(ref: string, path: string): Promise<HistoryEntry | null>;
   listCommitsForPath(ref: string, path: string, limit: number): Promise<HistoryEntry[]>;
@@ -309,7 +309,7 @@ export function createSpecRepoClient(env: SpecEnv): SpecRepoClient {
       await octokit.rest.pulls.update({ owner, repo, pull_number: prNumber, body });
     },
 
-    async findOpenGapIssue(title, label) {
+    async findOpenGapIssue(question, label) {
       const res = await octokit.rest.issues.listForRepo({
         owner,
         repo,
@@ -318,10 +318,13 @@ export function createSpecRepoClient(env: SpecEnv): SpecRepoClient {
         per_page: 100,
       });
       // Same question asked twice should join the existing issue rather than
-      // adding another row to the owners' backlog. Uses the same notion of
-      // "same question" as the in-process memo, so the two cannot disagree.
-      const needle = gapKey(title);
-      const hit = res.data.find((issue) => gapKey(issue.title) === needle);
+      // adding another row to the owners' backlog.
+      //
+      // Matched on a marker in the body rather than the title, because the
+      // title is user-editable: two people wording the heading differently
+      // must not produce two issues for one question.
+      const needle = gapKey(question);
+      const hit = res.data.find((issue) => markerIn(issue.body) === needle);
       return hit ? { url: hit.html_url, number: hit.number } : null;
     },
 
