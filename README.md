@@ -266,6 +266,30 @@ The lookup is best-effort: it runs in parallel with the spec answer and
 resolves to null on any failure, so it can never take down an answer the
 specification already gave.
 
+### Uploading and downloading specs
+
+**Upload spec** takes a Markdown or text file, asks for a name, shows the path
+it will occupy, and opens a pull request adding it as **v1**. A new spec
+entering the repo is a product-truth change too, so it gets the same review as
+the hundredth revision — and an upload can never silently overwrite, because
+a name already in use comes back as a conflict.
+
+The file is validated in the browser before anything is sent: extension, size,
+and whether it is really text. If it does not look rule-shaped — numbered
+rules like `ADDON-001` — it says so and uploads anyway, because an undistilled
+PRD is still worth having in the repo, just not worth pointing the compilers
+at yet.
+
+**Download** writes the committed spec with its version in the filename:
+`parent-v4.md`, `cam-plus-v3.md`. Commits are the versions, so vN is the
+number of commits touching that path. Two details that matter because these
+filenames get pasted into tickets:
+
+- It downloads the **committed** text, not the editor draft. "The verified
+  spec" means the version of record.
+- A spec with more revisions than the tool scanned reads `v100+` rather than
+  claiming a precision it could not confirm.
+
 ### The gap log
 
 A question the spec cannot answer is the most useful signal this tool

@@ -8,6 +8,7 @@ import { ExplorerTab } from '@/components/ExplorerTab';
 import { ParentCheckTab } from '@/components/ParentCheckTab';
 import { HistoryDrawer } from '@/components/HistoryDrawer';
 import { SpecPanel } from '@/components/SpecPanel';
+import { UploadDialog } from '@/components/UploadDialog';
 import { StatesTab } from '@/components/StatesTab';
 import { TestsTab } from '@/components/TestsTab';
 import { ApiError, commitSpec, getSpec, initSpec, listSpecs, pullLatest } from '@/lib/client/api';
@@ -18,11 +19,13 @@ const TABS = [
   // Ask leads: it is the surface support and customers of this tool use, and
   // the only one that does not require knowing how the spec is organised.
   { id: 'ask', label: 'Ask' },
+  // Parent Check sits second: after asking, the next thing a spec author does
+  // is see how their spec lands against the knowledge base.
+  { id: 'parent', label: 'Parent Check' },
   { id: 'explorer', label: 'Behavior Explorer' },
   { id: 'tests', label: 'QA Test Matrix' },
   { id: 'states', label: 'State Machine' },
   { id: 'consistency', label: 'Consistency Check' },
-  { id: 'parent', label: 'Parent Check' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -46,6 +49,7 @@ export default function Page() {
   const [prNotice, setPrNotice] = useState<{ url: string; branch: string } | null>(null);
 
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [tab, setTab] = useState<TabId>('ask');
   const [matrix, setMatrix] = useState<TestMatrix | null>(null);
 
@@ -222,6 +226,7 @@ export default function Page() {
           }}
           onOpenHistory={() => setHistoryOpen(true)}
           onInitialize={() => void handleInitialize()}
+          onUpload={() => setUploadOpen(true)}
           onDismissError={() => setSpecError(null)}
         />
 
@@ -288,6 +293,19 @@ export default function Page() {
           setCommitError(null);
         }}
         onAcceptUpstream={acceptUpstream}
+      />
+
+      <UploadDialog
+        open={uploadOpen}
+        specRoot={spec?.specRoot ?? 'spec'}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={() => {
+          // The new spec lives on a PR branch until it merges, so refresh the
+          // list rather than trying to select something that is not there yet.
+          void listSpecs()
+            .then((res) => setSpecs(res.specs))
+            .catch(() => undefined);
+        }}
       />
 
       <HistoryDrawer open={historyOpen} specPath={spec?.specPath ?? ''} onClose={() => setHistoryOpen(false)} />

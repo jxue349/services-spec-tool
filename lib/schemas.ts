@@ -65,6 +65,16 @@ export const ConsistencyRequestSchema = z.object({
     .optional(),
 });
 
+export const UploadRequestSchema = z.object({
+  /** Human name; becomes the directory the spec lives in. */
+  name: z.string().min(1).max(80),
+  /** Original filename, used for the extension check and the PR body. */
+  filename: z.string().min(1).max(260),
+  content: specString,
+  /** Optional note from the uploader, added to the pull request body. */
+  note: z.string().max(2_000).optional(),
+});
+
 export const CommitRequestSchema = z.object({
   /** Repo path of the spec being written; validated against the spec root. */
   specPath: z.string().min(1).max(400),
@@ -151,7 +161,20 @@ export const AskRequestSchema = z.object({
 const ruleStatus = z.enum(['confirmed', 'unverified', 'open', 'superseded', 'unknown']);
 
 export const AskResponseSchema = z.object({
+  /**
+   * The answer in one sentence. A support agent reads this and nothing else
+   * when they are on a call, so it has to stand alone.
+   */
+  headline: z.string().max(400),
+  /** The reasoning and qualifications behind the headline. */
   answer: shortText,
+  /**
+   * Discrete facts worth lifting out of the prose — a price, a limit, a
+   * device list. Scannable where a paragraph is not.
+   */
+  keyFacts: z
+    .array(z.object({ label: z.string().max(60), value: z.string().max(300) }))
+    .max(8),
   /**
    * Rules the answer rests on. Status comes from the spec, not the model, so
    * a reader can tell a confirmed rule from an open question.
@@ -328,6 +351,10 @@ export type SpecResponse = {
   commit: { sha: string; author: string; date: string; message: string };
   htmlUrl: string;
   specPath: string;
+  /** Commits touching this path — commits are the versions, so this is vN. */
+  version: number;
+  /** False when the history was longer than we scanned, so vN is a floor. */
+  versionExact: boolean;
   /** True when this is the parent spec / knowledge base. */
   isParent: boolean;
   specRoot: string;

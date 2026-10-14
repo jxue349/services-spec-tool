@@ -189,12 +189,38 @@ export function AskTab({
 
       {result ? (
         <>
+          {/*
+            Headline, then facts, then reasoning. An agent on a call reads the
+            first line; the rest is there when the customer pushes back.
+          */}
           <Panel className={`px-3 py-3 ${CONFIDENCE[result.confidence].className}`}>
             <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-70">
               {CONFIDENCE[result.confidence].label}
             </div>
-            <p className="mt-1 text-xs leading-relaxed">{result.answer}</p>
+            <p className="mt-1.5 text-sm font-medium leading-snug">{result.headline}</p>
           </Panel>
+
+          {result.keyFacts.length > 0 ? (
+            <Panel className="overflow-hidden">
+              <dl className="divide-y divide-line/60">
+                {result.keyFacts.map((fact, i) => (
+                  <div key={`${fact.label}-${i}`} className="flex gap-3 px-3 py-1.5">
+                    <dt className="w-32 shrink-0 font-mono text-[10px] uppercase tracking-[0.1em] text-inkDim">
+                      {fact.label}
+                    </dt>
+                    <dd className="text-xs leading-relaxed text-ink">{fact.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </Panel>
+          ) : null}
+
+          {result.answer.trim() !== '' ? (
+            <Panel className="px-3 py-3">
+              <SectionLabel>Detail</SectionLabel>
+              <p className="mt-1 text-xs leading-relaxed text-ink">{result.answer}</p>
+            </Panel>
+          ) : null}
 
           {result.caveat !== null && result.caveat.trim() !== '' ? (
             <Panel className="border-warning/50 bg-warning/10 px-3 py-2 text-[11px] leading-relaxed text-warning">

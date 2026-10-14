@@ -56,8 +56,10 @@ export async function POST(req: Request): Promise<NextResponse> {
     // empty extract and letting the model improvise from the question alone.
     if (!context.wholeDocument && context.blocks.length === 0) {
       const empty: AskResult = {
+        headline: 'This specification does not cover that.',
         answer:
-          'Nothing in this specification addresses that question — no rule in the document matched it.',
+          'No rule in the document matched the question, so there is nothing here to answer from.',
+        keyFacts: [],
         citations: [],
         confidence: 'none',
         specGap: 'The specification defines no rule covering this question.',

@@ -162,3 +162,16 @@ export const flagGap = (body: {
   rulesConsidered?: number;
   rulesRetrieved?: number;
 }): Promise<GapResponse> => request<GapResponse>('/api/gaps', { method: 'POST', body: JSON.stringify(body) });
+
+// --- upload ----------------------------------------------------------------
+
+export const uploadSpec = (body: {
+  name: string;
+  filename: string;
+  content: string;
+  note?: string;
+}): Promise<CommitResponse & { specPath: string }> =>
+  request<CommitResponse & { specPath: string }>('/api/spec/upload', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });

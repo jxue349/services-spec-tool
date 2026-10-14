@@ -363,11 +363,22 @@ export function createSpecRepoClient(env: SpecEnv): SpecRepoClient {
 }
 
 /** Loads the spec plus the version metadata the UI shows in the version badge. */
+/** Commits counted for a version number before we stop and say "at least". */
+const VERSION_SCAN_LIMIT = 100;
+
 export async function readSpec(client: SpecRepoClient, env: SpecEnv, specPath: string): Promise<SpecResponse> {
   const file = await client.getFile(env.baseBranch, specPath);
   if (file === null) throw new SpecNotFoundError(specPath);
 
-  const commit = await client.lastCommitForPath(env.baseBranch, specPath);
+  // The version IS the commit count: commits are the versions, so v1 is the
+  // first commit that touched this path. Scanned rather than paginated to
+  // exhaustion — a spec with 100+ revisions can say "100+" honestly instead
+  // of costing ten API calls on every page load.
+  const history = await client.listCommitsForPath(env.baseBranch, specPath, VERSION_SCAN_LIMIT);
+  const version = history.length;
+  const versionExact = history.length < VERSION_SCAN_LIMIT;
+
+  const commit = history[0] ?? (await client.lastCommitForPath(env.baseBranch, specPath));
 
   return {
     content: file.content,
@@ -380,6 +391,8 @@ export async function readSpec(client: SpecRepoClient, env: SpecEnv, specPath: s
     },
     htmlUrl: `https://github.com/${env.owner}/${env.repo}/blob/${env.baseBranch}/${specPath}`,
     specPath,
+    version,
+    versionExact,
     isParent: specPath === env.parentPath,
     specRoot: env.specRoot,
     parentPath: env.parentPath,

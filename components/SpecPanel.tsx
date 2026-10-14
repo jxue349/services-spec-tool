@@ -2,6 +2,8 @@
 
 import type { RefObject } from 'react';
 import { SpecSelector } from './SpecSelector';
+import { downloadFilename } from '@/lib/spec-files';
+import { downloadText } from '@/lib/client/export';
 import { Button, ErrorNote, Spinner } from './ui';
 import type { SpecListEntry, SpecResponse } from '@/lib/schemas';
 
@@ -31,6 +33,7 @@ export function SpecPanel({
   onCheckIn,
   onOpenHistory,
   onInitialize,
+  onUpload,
   onDismissError,
 }: {
   specs: SpecListEntry[];
@@ -51,6 +54,7 @@ export function SpecPanel({
   onCheckIn: () => void;
   onOpenHistory: () => void;
   onInitialize: () => void;
+  onUpload: () => void;
   onDismissError: () => void;
 }) {
   return (
@@ -68,7 +72,9 @@ export function SpecPanel({
             title={`${spec.commit.message || 'no commit message'} — ${spec.commit.author}`}
             className="rounded border border-line bg-panelAlt px-2 py-0.5 font-mono text-[10px] text-accent hover:border-accent/60"
           >
-            v: {spec.commit.sha ? spec.commit.sha.slice(0, 7) : 'unknown'} · {shortDate(spec.commit.date)}
+            v{spec.version}
+            {spec.versionExact ? '' : '+'} · {spec.commit.sha ? spec.commit.sha.slice(0, 7) : 'unknown'} ·{' '}
+            {shortDate(spec.commit.date)}
           </a>
         ) : null}
 
@@ -111,6 +117,27 @@ export function SpecPanel({
         <Button onClick={onOpenHistory} disabled={spec === null}>
           History
         </Button>
+        <Button
+          onClick={() =>
+            spec &&
+            downloadText(
+              downloadFilename(spec.specPath, spec.version, spec.versionExact),
+              'text/markdown',
+              // The committed text, not the editor draft: "download the
+              // verified spec" means the version that is actually of record.
+              spec.content,
+            )
+          }
+          disabled={spec === null}
+          title={
+            spec === null
+              ? 'No spec loaded'
+              : `Download ${downloadFilename(spec.specPath, spec.version, spec.versionExact)} — the committed version, not your edits`
+          }
+        >
+          Download
+        </Button>
+        <Button onClick={onUpload}>Upload spec</Button>
 
         {/* Says why "Check in changes" is inert, without needing a hover. */}
         {spec !== null && !dirty ? (
