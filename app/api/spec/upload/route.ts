@@ -3,6 +3,7 @@ import { getSpecEnv } from '@/lib/env';
 import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
 import { NEW_FILE_SHA, SpecConflictError, commitSpec, createSpecRepoClient } from '@/lib/github';
 import { BadRequestError, readJson } from '@/lib/http';
+import { NotSignedInError, requireWriteIdentity } from '@/lib/auth/require-user';
 import { UploadRejected, uploadPathFor, validateUpload } from '@/lib/spec-files';
 import { resolveSpecPathValue } from '@/lib/resolve-spec-path';
 import { UploadRequestSchema } from '@/lib/schemas';
@@ -32,9 +33,11 @@ export async function POST(req: Request): Promise<NextResponse> {
     // every client-supplied path goes through.
     const specPath = resolveSpecPathValue(uploadPathFor(env.specRoot, body.name), env);
 
+    const { author } = await requireWriteIdentity();
     const client = createSpecRepoClient(env);
 
     const result = await commitSpec(client, env, {
+      ...(author ? { author } : {}),
       specPath,
       content: body.content,
       // Asserting the file is new: if it exists, this comes back a conflict.
@@ -58,6 +61,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     return NextResponse.json({ ...result, specPath });
   } catch (err) {
+    if (err instanceof NotSignedInError) return apiError(401, err.message, requestId);
     if (err instanceof BadRequestError) return apiError(400, err.message, requestId);
     if (err instanceof UploadRejected) return apiError(400, err.message, requestId);
     if (err instanceof InvalidSpecPathError) return apiError(400, err.message, requestId);

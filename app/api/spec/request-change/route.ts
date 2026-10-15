@@ -4,6 +4,7 @@ import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
 import { followersPathFor, parseFollowers } from '@/lib/followers';
 import { SpecNotFoundError, createSpecRepoClient } from '@/lib/github';
 import { BadRequestError, readJson } from '@/lib/http';
+import { NotSignedInError, requireWriteIdentity } from '@/lib/auth/require-user';
 import { appendAdditions } from '@/lib/merge-additions';
 import { resolveSpecPathValue } from '@/lib/resolve-spec-path';
 import { RequestChangeSchema } from '@/lib/schemas';
@@ -28,6 +29,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const body = await readJson(req, RequestChangeSchema);
     const env = getSpecEnv();
     const childPath = resolveSpecPathValue(body.childPath, env);
+    const { author, email } = await requireWriteIdentity();
     const client = createSpecRepoClient(env);
 
     const parent = await client.getFile(env.baseBranch, env.parentPath);
@@ -64,6 +66,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         content: merge.content,
         message: `spec(parent): merge ${merge.applied.length} rule(s) from ${body.childLabel}`,
         sha: parent.sha,
+        ...(author ? { author } : {}),
       });
     } else {
       // Keep the branch non-empty so a PR can exist at all: re-commit the
@@ -74,6 +77,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         path: `${env.parentPath.replace(/\.md$/i, '')}.requests/${stamp}.md`,
         content: renderRequestNote(body.childLabel, childPath, contradictions),
         message: `spec(parent): conflict report from ${body.childLabel}`,
+        ...(author ? { author } : {}),
       });
     }
 
@@ -87,6 +91,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         skipped: merge.skipped,
         conflicts: body.conflicts,
         followers: [],
+        requestedBy: email,
       }),
     });
 
@@ -104,6 +109,7 @@ export async function POST(req: Request): Promise<NextResponse> {
           skipped: merge.skipped,
           conflicts: body.conflicts,
           followers: refused,
+          requestedBy: email,
         }),
       );
     }
@@ -117,6 +123,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     };
     return NextResponse.json(result);
   } catch (err) {
+    if (err instanceof NotSignedInError) return apiError(401, err.message, requestId);
     if (err instanceof BadRequestError) return apiError(400, err.message, requestId);
     if (err instanceof InvalidSpecPathError) return apiError(400, err.message, requestId);
     if (err instanceof SpecNotFoundError) return apiError(404, err.message, requestId);
@@ -153,11 +160,15 @@ function renderPrBody(input: {
   skipped: string[];
   conflicts: Conflict[];
   followers: string[];
+  /** Signed-in requester, when the app knows who that is. */
+  requestedBy: string | null;
 }): string {
   const contradictions = input.conflicts.filter((c) => c.kind === 'contradiction');
 
   const lines = [
-    `Requested from the **${input.childLabel}** spec (\`${input.childPath}\`) via AI Spec Explorer.`,
+    input.requestedBy === null
+      ? `Requested from the **${input.childLabel}** spec (\`${input.childPath}\`) via AI Spec Explorer.`
+      : `Requested by **${input.requestedBy}** from the **${input.childLabel}** spec (\`${input.childPath}\`).`,
     '',
   ];
 

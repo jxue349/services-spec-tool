@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckInDialog } from '@/components/CheckInDialog';
 import { AskTab } from '@/components/AskTab';
+import { AuthBar } from '@/components/AuthBar';
 import { ConsistencyTab } from '@/components/ConsistencyTab';
 import { ExplorerTab } from '@/components/ExplorerTab';
 import { ParentCheckTab } from '@/components/ParentCheckTab';
@@ -13,7 +14,7 @@ import { StatesTab } from '@/components/StatesTab';
 import { TestsTab } from '@/components/TestsTab';
 import { ApiError, commitSpec, getSpec, initSpec, listSpecs, pullLatest } from '@/lib/client/api';
 import { findRuleRange } from '@/lib/client/rules';
-import type { CommitResponse, SpecListEntry, SpecResponse, TestMatrix } from '@/lib/schemas';
+import type { CommitResponse, MeResponse, SpecListEntry, SpecResponse, TestMatrix } from '@/lib/schemas';
 
 const TABS = [
   // Ask leads: it is the surface support and customers of this tool use, and
@@ -50,6 +51,7 @@ export default function Page() {
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [, setSignedInUser] = useState<MeResponse['user']>(null);
   const [tab, setTab] = useState<TabId>('ask');
   const [matrix, setMatrix] = useState<TestMatrix | null>(null);
 
@@ -200,6 +202,9 @@ export default function Page() {
           The spec in Git is the source of truth. It compiles into four views — edit a rule, recompile, and the views
           move with it.
         </p>
+        <span className="ml-auto">
+          <AuthBar onUserChange={setSignedInUser} />
+        </span>
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-2">

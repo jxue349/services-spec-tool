@@ -27,6 +27,12 @@ export interface SpecRepoClient {
     path: string;
     content: string;
     message: string;
+    /**
+     * Who the commit is *by*. The app remains the committer — it genuinely
+     * made the commit — but authorship belongs to the person who asked for
+     * the change, so Git history names them rather than a shared bot.
+     */
+    author?: { name: string; email: string };
     /** Omitted when creating the file for the first time. */
     sha?: string;
   }): Promise<{ commitSha: string; sha: string }>;
@@ -96,6 +102,8 @@ export class DirectCommitForbiddenError extends Error {
 export type CommitInput = {
   /** Which spec is being written. Validated by the route before it gets here. */
   specPath: string;
+  /** Signed-in user, when there is one. Becomes the commit author. */
+  author?: { name: string; email: string };
   content: string;
   baseSha: string;
   commitMessage: string;
@@ -151,6 +159,7 @@ export async function commitSpec(
       path: input.specPath,
       content: input.content,
       message: input.commitMessage,
+      ...(input.author !== undefined ? { author: input.author } : {}),
       ...(existingSha !== undefined ? { sha: existingSha } : {}),
     });
     return { mode: 'direct', branch: env.baseBranch, commitSha: written.commitSha, sha: written.sha };
@@ -167,6 +176,7 @@ export async function commitSpec(
     path: input.specPath,
     content: input.content,
     message: input.commitMessage,
+    ...(input.author !== undefined ? { author: input.author } : {}),
     ...(existingSha !== undefined ? { sha: existingSha } : {}),
   });
 
@@ -193,7 +203,10 @@ function statusOf(err: unknown): number {
 function toHistoryEntry(commit: {
   sha: string;
   html_url: string;
-  commit: { message: string; author: { name?: string | null; date?: string | null } | null };
+  commit: {
+    message: string;
+    author: { name?: string | null; email?: string | null; date?: string | null } | null;
+  };
   author: { login?: string } | null;
 }): HistoryEntry {
   return {
@@ -201,6 +214,7 @@ function toHistoryEntry(commit: {
     shortSha: commit.sha.slice(0, 7),
     message: commit.commit.message.split('\n')[0] ?? '',
     author: commit.commit.author?.name ?? commit.author?.login ?? 'unknown',
+    authorEmail: commit.commit.author?.email ?? '',
     date: commit.commit.author?.date ?? '',
     htmlUrl: commit.html_url,
   };
@@ -256,7 +270,7 @@ export function createSpecRepoClient(env: SpecEnv): SpecRepoClient {
       await octokit.rest.git.createRef({ owner, repo, ref: `refs/heads/${name}`, sha: fromSha });
     },
 
-    async putFile({ branch, path: specPath, content, message, sha }) {
+    async putFile({ branch, path: specPath, content, message, sha, author }) {
       const res = await octokit.rest.repos.createOrUpdateFileContents({
         owner,
         repo,
@@ -264,8 +278,9 @@ export function createSpecRepoClient(env: SpecEnv): SpecRepoClient {
         branch,
         message,
         content: Buffer.from(content, 'utf8').toString('base64'),
+        // Committer is the app; author is the person, when we know them.
         committer: { name: env.authorName, email: env.authorEmail },
-        author: { name: env.authorName, email: env.authorEmail },
+        author: author ?? { name: env.authorName, email: env.authorEmail },
         ...(sha !== undefined ? { sha } : {}),
       });
       return {

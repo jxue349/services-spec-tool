@@ -5,6 +5,7 @@ import { followersPathFor, parseFollowers } from '@/lib/followers';
 import { GAP_LABEL, gapMarker, gapTitle, recallRecentGap, rememberGap } from '@/lib/gaps';
 import { createSpecRepoClient } from '@/lib/github';
 import { BadRequestError, readJson } from '@/lib/http';
+import { NotSignedInError, requireWriteIdentity } from '@/lib/auth/require-user';
 import { checkRateLimit, clientKey } from '@/lib/ratelimit';
 import { GapRequestSchema } from '@/lib/schemas';
 import type { GapResponse } from '@/lib/schemas';
@@ -52,6 +53,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   try {
     const body = await readJson(req, GapRequestSchema);
+    const { email } = await requireWriteIdentity();
     const env = getSpecEnv();
     const client = createSpecRepoClient(env);
 
@@ -79,7 +81,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     const issue = await client.createIssue({
       title,
-      body: renderGapBody({ ...body, specPath: body.specPath, followers }),
+      body: renderGapBody({ ...body, specPath: body.specPath, followers, reportedBy: email }),
       labels: [GAP_LABEL],
     });
 
@@ -87,6 +89,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const created: GapResponse = { issueUrl: issue.url, issueNumber: issue.number, alreadyLogged: false };
     return NextResponse.json(created);
   } catch (err) {
+    if (err instanceof NotSignedInError) return apiError(401, err.message, requestId);
     if (err instanceof BadRequestError) return apiError(400, err.message, requestId);
 
     // Issues need their own permission; the spec flow does not use it, so a
@@ -107,6 +110,8 @@ export async function POST(req: Request): Promise<NextResponse> {
 
 function renderGapBody(input: {
   question: string;
+  /** Signed-in reporter, when the app knows who that is. */
+  reportedBy?: string | null;
   description?: string;
   specPath: string;
   specLabel: string;
@@ -121,7 +126,9 @@ function renderGapBody(input: {
     // title is later edited. Invisible when GitHub renders the body.
     gapMarker(input.question),
     '',
-    'A question was asked in AI Spec Explorer that the specification could not answer.',
+    input.reportedBy
+      ? `**${input.reportedBy}** asked a question in AI Spec Explorer that the specification could not answer.`
+      : 'A question was asked in AI Spec Explorer that the specification could not answer.',
     '',
     '## Question',
     '',

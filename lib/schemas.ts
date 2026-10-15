@@ -363,6 +363,12 @@ export type SpecResponse = {
   allowDirectCommit: boolean;
 };
 
+export type MeResponse = {
+  /** False when the deployment has no OIDC configured at all. */
+  authConfigured: boolean;
+  user: { email: string; name: string } | null;
+};
+
 export type SpecListEntry = {
   path: string;
   /** Directory name for a child spec, or an explicit parent label. */
@@ -391,6 +397,8 @@ export type HistoryEntry = {
   shortSha: string;
   message: string;
   author: string;
+  /** Commit author email — the identity the change was committed under. */
+  authorEmail: string;
   date: string;
   htmlUrl: string;
 };

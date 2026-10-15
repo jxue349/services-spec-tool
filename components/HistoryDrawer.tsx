@@ -70,7 +70,9 @@ export function HistoryDrawer({ open, specPath, onClose }: { open: boolean; spec
                     <span className="truncate text-xs text-ink">{c.message || '(no message)'}</span>
                   </div>
                   <div className="mt-1 font-mono text-[10px] text-inkDim">
-                    {c.author}
+                    {/* Email, not just the display name: it is the identity
+                        the change was actually committed under. */}
+                    {c.authorEmail || c.author}
                     {c.date ? ` · ${new Date(c.date).toLocaleString()}` : ''}
                   </div>
                 </a>

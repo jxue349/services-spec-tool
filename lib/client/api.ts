@@ -1,5 +1,6 @@
 import type {
   AskResult,
+  MeResponse,
   GapResponse,
   CommitResponse,
   ConflictFinding,
@@ -175,3 +176,10 @@ export const uploadSpec = (body: {
     method: 'POST',
     body: JSON.stringify(body),
   });
+
+// --- auth ------------------------------------------------------------------
+
+export const getMe = (): Promise<MeResponse> => request<MeResponse>('/api/auth/me', { method: 'GET' });
+
+export const signOut = (): Promise<{ ok: boolean }> =>
+  request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' });

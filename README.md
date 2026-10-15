@@ -330,6 +330,50 @@ as the Chat API already in use, so it adds a protocol layer rather than a
 capability. Retrieval therefore runs over the spec document itself, which is
 also what keeps the answer provably spec-derived.
 
+## Sign-in and who changed what
+
+Users sign in through JumpCloud over OIDC. The handshake uses `openid-client`
+rather than hand-rolled code: discovery, PKCE, state, nonce, and ID-token
+signature and claim validation are each a place where a subtle mistake becomes
+"anyone can be anyone" — and this identity is written into Git history.
+
+**Commits carry the person, not the bot.** GitHub separates commit *author*
+from *committer*, so a spec change reads:
+
+```
+AUTHOR    Jing Xue <jxue@wyze.com>                     ← who asked for it
+COMMITTER AI Spec Explorer <spec-explorer@wyze.com>    ← what made the commit
+```
+
+That is the honest split: the person decided the change, the app performed it.
+The history drawer shows the author email, so every revision names who made it.
+
+Gap reports and change requests to the parent spec carry the reporter's email
+in the body. **Issues and pull requests are still *opened* by the service
+account** — GitHub has no way for a token to act as another user — so
+attribution lives in the content, not the GitHub actor. If you need the GitHub
+actor to be the person, each user needs their own token, which is a different
+and much larger design.
+
+### Details that matter
+
+- **Session is a signed JWT in an HttpOnly cookie**, not server state — this
+  app has no database and should not grow one to remember who is looking at
+  it. The cost is that a session cannot be revoked before it expires, which is
+  why the lifetime is eight hours and why rotating `SESSION_SECRET`
+  invalidates every session at once.
+- **`SESSION_SECRET` must be at least 32 characters**, enforced at startup. A
+  short secret makes the signature forgeable, and here that means forging an
+  identity that lands in Git history.
+- **`OIDC_ALLOWED_EMAIL_DOMAINS`** restricts who may sign in. A JumpCloud
+  tenant usually authenticates contractors and guests as well, which is not
+  the same set as "staff".
+- The access token from JumpCloud is **used once and discarded** — the app
+  never calls the IdP on the user's behalf, so keeping it would be storing a
+  credential for no reason.
+- Sign-out drops the local cookie only. Single logout would sign the user out
+  of every app behind the IdP, which is rarely what closing one tool means.
+
 ## The parent knowledge base
 
 One parent spec is the organisation-wide knowledge base for subscription
@@ -486,9 +530,11 @@ tests/            unit + mocked-integration tests
 - **Timeouts and retries**: 30s timeout with one transport retry on Glean calls
   (408/429/5xx and timeouts only — a rejected token is not retried), plus one
   corrective retry when the reply fails schema validation.
-- **No auth on the app itself.** It is an internal pilot tool. Anyone who can
-  reach it can open a PR against the spec repo as the token identity — put it
-  behind SSO before it leaves a trusted network.
+- **Sign-in and attribution.** With `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
+  `OIDC_CLIENT_SECRET` and `SESSION_SECRET` set, every write requires a
+  signed-in user and is attributed to them. Without all four the app stays
+  open and attributes to the service account — fine locally, **not** fine on a
+  shared network, and `/api/auth/me` reports which mode it is in.
 
 ---
 
