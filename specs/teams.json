@@ -1,0 +1,34 @@
+{
+  "teams": [
+    {
+      "slug": "hardware",
+      "name": "HW Team",
+      "code": "HW",
+      "description": "Hardware features, and the software features shown on the plugin page."
+    },
+    {
+      "slug": "services",
+      "name": "Services",
+      "code": "SVC",
+      "description": "Subscriptions, entitlement, billing channels and upsell."
+    },
+    {
+      "slug": "app-experience",
+      "name": "App Experience",
+      "code": "APPEX",
+      "description": "Information architecture, navigation and shared app surfaces."
+    },
+    {
+      "slug": "platform",
+      "name": "Platform Team",
+      "code": "PLAT",
+      "description": "Accounts, identity, data model and the APIs other teams build on."
+    },
+    {
+      "slug": "others",
+      "name": "Others",
+      "code": "MISC",
+      "description": "Specs that do not yet belong to a named team."
+    }
+  ]
+}
