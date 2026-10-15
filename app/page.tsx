@@ -12,9 +12,16 @@ import { SpecPanel } from '@/components/SpecPanel';
 import { UploadDialog } from '@/components/UploadDialog';
 import { StatesTab } from '@/components/StatesTab';
 import { TestsTab } from '@/components/TestsTab';
-import { ApiError, commitSpec, getSpec, initSpec, listSpecs, pullLatest } from '@/lib/client/api';
+import { ApiError, commitSpec, getSpec, initSpec, listSpecs, listTeams, pullLatest } from '@/lib/client/api';
 import { findRuleRange } from '@/lib/client/rules';
-import type { CommitResponse, MeResponse, SpecListEntry, SpecResponse, TestMatrix } from '@/lib/schemas';
+import type {
+  CommitResponse,
+  MeResponse,
+  SpecListEntry,
+  SpecResponse,
+  TeamSummary,
+  TestMatrix,
+} from '@/lib/schemas';
 
 const TABS = [
   // Ask leads: it is the surface support and customers of this tool use, and
@@ -34,6 +41,8 @@ type TabId = (typeof TABS)[number]['id'];
 export default function Page() {
   const [spec, setSpec] = useState<SpecResponse | null>(null);
   const [specs, setSpecs] = useState<SpecListEntry[]>([]);
+  const [teams, setTeams] = useState<TeamSummary[]>([]);
+  const [teamSlug, setTeamSlug] = useState<string>('');
   // undefined = "whatever the server considers the parent"; set once chosen.
   const [selectedPath, setSelectedPath] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState('');
@@ -89,7 +98,26 @@ export default function Page() {
     void listSpecs()
       .then((res) => setSpecs(res.specs))
       .catch(() => setSpecs([]));
+
+    // Teams are additive: if the repo has no team folders yet, the selector
+    // stays hidden and everything behaves as a single knowledge base.
+    void listTeams()
+      .then((res) => {
+        setTeams(res.teams);
+        if (res.defaultTeamSlug !== null) setTeamSlug(res.defaultTeamSlug);
+      })
+      .catch(() => setTeams([]));
   }, [load]);
+
+  /** Switching team loads that team's knowledge base. */
+  const selectTeam = (slug: string) => {
+    const team = teams.find((t) => t.slug === slug);
+    if (team === undefined || slug === teamSlug) return;
+    if (dirty && !window.confirm('Switching team discards your uncommitted edits. Continue?')) return;
+    setTeamSlug(slug);
+    setMatrix(null);
+    void load('pull', team.parentPath);
+  };
 
   /** Switching spec discards uncommitted edits, so confirm first. */
   const selectSpec = (path: string) => {
@@ -209,7 +237,10 @@ export default function Page() {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-2">
         <SpecPanel
-          specs={specs}
+          teams={teams}
+          teamSlug={teamSlug}
+          onSelectTeam={selectTeam}
+          specs={teamSlug === '' ? specs : specs.filter((entry) => entry.path.startsWith(`${teamSlug}/`) || entry.path.includes(`/${teamSlug}/`))}
           selectedPath={selectedPath ?? spec?.specPath ?? ''}
           onSelectSpec={selectSpec}
           spec={spec}

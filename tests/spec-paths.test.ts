@@ -101,3 +101,28 @@ describe('specLabel', () => {
     expect(specLabel('spec/notes.md', ROOT, 'spec/parent.md')).toBe('notes');
   });
 });
+
+describe('specLabel with team folders', () => {
+  const ROOT_T = 'specs';
+  const PARENT = 'specs/services/parent.md';
+
+  it('labels a spec by its own directory, not its team', () => {
+    // The bug this fixes: every spec in a team showed the team's name.
+    expect(specLabel('specs/services/cam-plus/behavior.md', ROOT_T, PARENT)).toBe('cam-plus');
+    expect(specLabel('specs/services/upsell/behavior.md', ROOT_T, PARENT)).toBe('upsell');
+  });
+
+  it('distinguishes same-named specs in different teams', () => {
+    expect(specLabel('specs/hardware/plugin-page/behavior.md', ROOT_T, PARENT)).toBe('plugin-page');
+    expect(specLabel('specs/app-experience/plugin-page/behavior.md', ROOT_T, PARENT)).toBe('plugin-page');
+  });
+
+  it('still names the parent spec', () => {
+    expect(specLabel(PARENT, ROOT_T, PARENT)).toBe('Parent spec (knowledge base)');
+  });
+
+  it('falls back to the stem for a file with no directory of its own', () => {
+    expect(specLabel('specs/others/notes.md', ROOT_T, PARENT)).toBe('others');
+    expect(specLabel('spec/notes.md', 'spec', PARENT)).toBe('notes');
+  });
+});

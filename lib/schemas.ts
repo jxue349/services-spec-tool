@@ -369,6 +369,21 @@ export type MeResponse = {
   user: { email: string; name: string } | null;
 };
 
+export type TeamSummary = {
+  slug: string;
+  name: string;
+  code: string;
+  parentPath: string;
+  specPaths: string[];
+  description?: string;
+};
+
+export type TeamsResponse = {
+  teams: TeamSummary[];
+  specRoot: string;
+  defaultTeamSlug: string | null;
+};
+
 export type SpecListEntry = {
   path: string;
   /** Directory name for a child spec, or an explicit parent label. */

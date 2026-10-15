@@ -68,16 +68,19 @@ export function isSpecPath(candidate: string, root: string): boolean {
 }
 
 /**
- * Display label for a spec: the directory under the root, or the file's own
- * stem when it sits directly in the root (as the parent spec does).
+ * Display label for a spec: the directory the spec itself lives in.
+ *
+ * Takes the *last* directory rather than the first under the root, because
+ * with teams the first is the team — `specs/services/cam-plus/behavior.md`
+ * must read "cam-plus", not "services", or every spec in a team shares one
+ * label. A file with no directory of its own falls back to its stem.
  */
 export function specLabel(path: string, root: string, parentPath: string): string {
   if (path === parentPath) return 'Parent spec (knowledge base)';
 
   const rootSegments = root.split('/').filter((s) => s !== '');
-  const segments = path.split('/').slice(rootSegments.length);
+  const segments = path.split('/').slice(rootSegments.length).filter((s) => s !== '');
 
-  // spec/cam-plus/behavior.md -> "cam-plus"; spec/notes.md -> "notes"
-  const label = segments.length > 1 ? segments[0] : segments[0]?.replace(/\.md$/i, '');
-  return label ?? path;
+  if (segments.length >= 2) return segments[segments.length - 2] ?? path;
+  return segments[0]?.replace(/\.md$/i, '') ?? path;
 }

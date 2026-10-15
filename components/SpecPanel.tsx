@@ -2,10 +2,11 @@
 
 import type { RefObject } from 'react';
 import { SpecSelector } from './SpecSelector';
+import { TeamSelector } from './TeamSelector';
 import { downloadFilename } from '@/lib/spec-files';
 import { downloadText } from '@/lib/client/export';
 import { Button, ErrorNote, Spinner } from './ui';
-import type { SpecListEntry, SpecResponse } from '@/lib/schemas';
+import type { SpecListEntry, SpecResponse, TeamSummary } from '@/lib/schemas';
 
 function shortDate(iso: string): string {
   if (iso === '') return 'unknown date';
@@ -15,6 +16,9 @@ function shortDate(iso: string): string {
 }
 
 export function SpecPanel({
+  teams,
+  teamSlug,
+  onSelectTeam,
   specs,
   selectedPath,
   onSelectSpec,
@@ -36,6 +40,9 @@ export function SpecPanel({
   onUpload,
   onDismissError,
 }: {
+  teams: TeamSummary[];
+  teamSlug: string;
+  onSelectTeam: (slug: string) => void;
   specs: SpecListEntry[];
   selectedPath: string;
   onSelectSpec: (path: string) => void;
@@ -85,9 +92,12 @@ export function SpecPanel({
         ) : null}
       </header>
 
-      {specs.length > 1 ? (
-        <div className="border-b border-line px-3 py-2">
-          <SpecSelector specs={specs} value={selectedPath} disabled={loading || pulling} onChange={onSelectSpec} />
+      {teams.length > 1 || specs.length > 1 ? (
+        <div className="space-y-2 border-b border-line px-3 py-2">
+          <TeamSelector teams={teams} value={teamSlug} disabled={loading || pulling} onChange={onSelectTeam} />
+          {specs.length > 1 ? (
+            <SpecSelector specs={specs} value={selectedPath} disabled={loading || pulling} onChange={onSelectSpec} />
+          ) : null}
         </div>
       ) : null}
 

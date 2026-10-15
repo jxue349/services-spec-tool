@@ -374,19 +374,42 @@ and much larger design.
 - Sign-out drops the local cookie only. Single logout would sign the user out
   of every app behind the IdP, which is rarely what closing one tool means.
 
-## The parent knowledge base
+## Teams and their knowledge bases
 
-One parent spec is the organisation-wide knowledge base for subscription
-management, entitlement, and upsell behavior. Each new spec lives in its own
-directory and is distilled and merged into the parent over time.
+Each team owns a folder holding its own parent spec — that team's knowledge
+base — and the child specs distilled into it over time.
 
 ```
-spec/
-  parent.md              SPEC_PARENT_PATH — the knowledge base
-  followers.txt          who reviews changes to it
-  cam-plus/behavior.md   a child spec
-  upsell/behavior.md
+specs/
+  teams.json                      display names, order, rule-ID prefixes
+  services/parent.md              SVC   — subscriptions, entitlement, upsell
+  services/followers.txt          who reviews changes to it
+  services/cam-plus/behavior.md
+  hardware/parent.md              HW    — HW features, plugin-page SW features
+  app-experience/parent.md        APPEX — information architecture
+  platform/parent.md              PLAT  — accounts, identity, data model, APIs
+  others/parent.md                MISC  — holding area, not a destination
 ```
+
+**A team is a folder with a `parent.md` in it.** Nothing has to be registered
+for the app to notice one, so the repo stays self-describing and a stale
+manifest can never hide a team that exists. `specs/teams.json` supplies only
+display names, ordering, and the rule-ID prefix.
+
+**Rule IDs carry the team**, because `hardware/plugin-page` and
+`app-experience/plugin-page` would otherwise both namespace to `PLUGINPAGE` —
+impossible with one knowledge base, likely with five. The prefix is chosen in
+the manifest rather than derived: auto-shortening "app-experience" yields
+`APPEXPERIE`, which is both mangled and long for something cited in tickets.
+
+**Each spec resolves to its own team's parent.** Parent Check compares the
+hardware spec against the hardware knowledge base, never against Services.
+
+Today a spec belongs to exactly one team and Ask searches within one team.
+Cross-team questions — *"what does the plugin page show for a Cam Plus
+user?"* — span three knowledge bases and are not answered yet; see
+`docs/multi-team.md` for the federated-read design and why write stays
+siloed.
 
 Pick which spec the compilers run against with the selector in the left panel.
 It is deliberately one-at-a-time: each spec is its own source of truth until it

@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import type { SpecEnv } from './env';
 import { gapKey, markerIn } from './gaps';
+import { isTeamParent, parentPathForSpec } from './teams';
 import type { CommitResponse, HistoryEntry, SpecResponse } from './schemas';
 
 /**
@@ -408,9 +409,11 @@ export async function readSpec(client: SpecRepoClient, env: SpecEnv, specPath: s
     specPath,
     version,
     versionExact,
-    isParent: specPath === env.parentPath,
+    // Parent of its OWN team, not of a globally configured one: with several
+    // teams there is no single knowledge base.
+    isParent: isTeamParent(specPath, env.specRoot, env.parentPath),
     specRoot: env.specRoot,
-    parentPath: env.parentPath,
+    parentPath: parentPathForSpec(specPath, env.specRoot, env.parentPath),
     baseBranch: env.baseBranch,
     allowDirectCommit: env.allowDirectCommit,
   };

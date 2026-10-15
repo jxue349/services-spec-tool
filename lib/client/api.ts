@@ -1,5 +1,6 @@
 import type {
   AskResult,
+  TeamsResponse,
   MeResponse,
   GapResponse,
   CommitResponse,
@@ -183,3 +184,7 @@ export const getMe = (): Promise<MeResponse> => request<MeResponse>('/api/auth/m
 
 export const signOut = (): Promise<{ ok: boolean }> =>
   request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' });
+
+// --- teams -----------------------------------------------------------------
+
+export const listTeams = (): Promise<TeamsResponse> => request<TeamsResponse>('/api/teams', { method: 'GET' });
