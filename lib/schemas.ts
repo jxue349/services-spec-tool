@@ -151,11 +151,30 @@ export const StateMachineSchema = z.object({
 
 export const ASK_QUESTION_MAX_CHARS = 1_000;
 
+/**
+ * `spec` — only the selected document.
+ * `teams` — every team's knowledge base, federated.
+ *
+ * Federated read is the decision recorded in docs/multi-team.md: a question
+ * like "what does the plugin page show for a Cam Plus user?" spans three
+ * teams, and no single document answers it. Reading across them is safe;
+ * writing across them is not, so no write path takes this field.
+ */
+export const AskScopeSchema = z.enum(['spec', 'teams']);
+
 export const AskRequestSchema = z.object({
   spec: specString,
   question: z.string().min(1).max(ASK_QUESTION_MAX_CHARS),
   /** Which document was asked about, for display and provenance. */
   specLabel: z.string().min(1).max(120),
+  scope: AskScopeSchema.optional(),
+  /**
+   * Path of the document in `spec`. Federated reads use it to substitute the
+   * caller's unsaved draft for that team's committed parent — editing a rule
+   * and asking whether it now contradicts another team is the case this whole
+   * feature exists for, and it would be useless against committed text only.
+   */
+  specPath: z.string().min(1).max(400).optional(),
 });
 
 const ruleStatus = z.enum(['confirmed', 'unverified', 'open', 'superseded', 'unknown']);
@@ -178,9 +197,19 @@ export const AskResponseSchema = z.object({
   /**
    * Rules the answer rests on. Status comes from the spec, not the model, so
    * a reader can tell a confirmed rule from an open question.
+   *
+   * `team` is set only on a federated answer, where "which team's rule is
+   * this" is part of the answer rather than context the reader already has.
    */
   citations: z
-    .array(z.object({ ruleId: z.string().max(40), status: ruleStatus, why: shortText }))
+    .array(
+      z.object({
+        ruleId: z.string().max(40),
+        status: ruleStatus,
+        why: shortText,
+        team: z.string().max(80).nullish(),
+      }),
+    )
     .max(20),
   /**
    * How far the spec actually settles the question. "none" means the spec is
@@ -193,9 +222,37 @@ export const AskResponseSchema = z.object({
    * the knowledge base's own governance says those need a caveat.
    */
   caveat: shortText.nullable(),
+  /**
+   * Places where two teams' knowledge bases disagree about the same behavior,
+   * found while answering. Federated answers only.
+   *
+   * Reported, never resolved — the same rule Parent Check follows for
+   * contradictions. A tool that quietly picks one team's version destroys
+   * exactly the signal that makes reading across teams worth doing, and which
+   * knowledge base is right is a product decision for their owners.
+   */
+  crossTeamConflicts: z
+    .array(
+      z.object({
+        topic: z.string().max(200),
+        positions: z
+          .array(
+            z.object({
+              team: z.string().max(80),
+              ruleId: z.string().max(40),
+              says: shortText,
+            }),
+          )
+          .max(6),
+        impact: shortText,
+      }),
+    )
+    .max(10)
+    .optional(),
 });
 
 export type AskResponse = z.infer<typeof AskResponseSchema>;
+export type CrossTeamConflict = NonNullable<AskResponse['crossTeamConflicts']>[number];
 export type AskCitation = AskResponse['citations'][number];
 
 export type RetrievedRule = {
@@ -203,11 +260,33 @@ export type RetrievedRule = {
   section: string;
   status: 'confirmed' | 'unverified' | 'open' | 'superseded' | 'unknown';
   text: string;
+  /** Owning team, on a federated answer. Absent when one spec was searched. */
+  team?: { slug: string; name: string; code: string };
+};
+
+/**
+ * What each team's knowledge base contributed.
+ *
+ * Shown rather than kept internal because "Hardware: 0 of 3 rules" is the
+ * difference between a team having nothing to say and a team not having been
+ * asked — and a reader cannot judge a cross-team answer without knowing which.
+ */
+export type TeamRetrieval = {
+  slug: string;
+  name: string;
+  rulesConsidered: number;
+  rulesSent: number;
 };
 
 export type AskResult = AskResponse & {
   /** Retrieval provenance, added server-side. */
-  retrieval: { rulesConsidered: number; rulesSent: number; wholeDocument: boolean };
+  retrieval: {
+    rulesConsidered: number;
+    rulesSent: number;
+    wholeDocument: boolean;
+    /** Per-team breakdown, on a federated answer. */
+    teams?: TeamRetrieval[];
+  };
   /**
    * The rules actually sent to the model, highest ranked first.
    *

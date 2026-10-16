@@ -294,7 +294,7 @@ export default function Page() {
 
             {/* All stay mounted so results survive tab switches. */}
             <div className={tab === 'ask' ? 'block' : 'hidden'}>
-              <AskTab spec={spec} draft={draft} onReveal={revealRule} />
+              <AskTab spec={spec} draft={draft} teams={teams} onReveal={revealRule} />
             </div>
             <div className={tab === 'explorer' ? 'block' : 'hidden'}>
               <ExplorerTab spec={draft} onReveal={revealRule} />

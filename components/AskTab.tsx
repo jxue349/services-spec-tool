@@ -5,7 +5,7 @@ import { RuleChip } from './RuleChip';
 import { Button, EmptyState, ErrorNote, Panel, SectionLabel } from './ui';
 import { ask, flagGap, getSpec } from '@/lib/client/api';
 import { ASK_QUESTION_MAX_CHARS } from '@/lib/schemas';
-import type { AskResult, GapResponse, SpecResponse } from '@/lib/schemas';
+import type { AskResult, GapResponse, SpecResponse, TeamSummary } from '@/lib/schemas';
 
 /**
  * Ask — the main surface of the tool.
@@ -40,14 +40,16 @@ const EXAMPLES = [
 export function AskTab({
   spec,
   draft,
+  teams,
   onReveal,
 }: {
   spec: SpecResponse | null;
   draft: string;
+  teams: TeamSummary[];
   onReveal: (rule: string) => void;
 }) {
   const [question, setQuestion] = useState('');
-  const [scope, setScope] = useState<'current' | 'parent'>('current');
+  const [scope, setScope] = useState<'current' | 'parent' | 'teams'>('current');
   const [result, setResult] = useState<AskResult | null>(null);
   const [asked, setAsked] = useState('');
   const [busy, setBusy] = useState(false);
@@ -62,8 +64,16 @@ export function AskTab({
 
   if (spec === null) return <EmptyState>Load a spec first.</EmptyState>;
 
+  // Reading across teams only means anything when there is more than one.
+  const canFederate = teams.length > 1;
+  const federating = scope === 'teams' && canFederate;
   const askingParent = scope === 'parent' && !spec.isParent;
-  const scopeLabel = askingParent ? 'Parent spec (knowledge base)' : spec.isParent ? 'Parent spec (knowledge base)' : spec.specPath;
+
+  const scopeLabel = federating
+    ? `All ${teams.length} knowledge bases`
+    : askingParent || spec.isParent
+      ? 'Parent spec (knowledge base)'
+      : spec.specPath;
 
   const submit = async (q: string) => {
     const trimmed = q.trim();
@@ -78,10 +88,17 @@ export function AskTab({
     setGapTitleInput('');
     setGapDescription('');
     try {
-      // Asking the parent while a child is selected reads it fresh, so the
-      // answer reflects the knowledge base as it stands right now.
-      const text = askingParent ? (await getSpec(spec.parentPath)).content : draft;
-      setResult(await ask(text, trimmed, scopeLabel));
+      if (federating) {
+        // The server loads every team's parent itself. The draft goes along so
+        // an edit you have not committed still participates — asking whether a
+        // rule you just wrote conflicts with another team is the point.
+        setResult(await ask(draft, trimmed, scopeLabel, { scope: 'teams', specPath: spec.specPath }));
+      } else {
+        // Asking the parent while a child is selected reads it fresh, so the
+        // answer reflects the knowledge base as it stands right now.
+        const text = askingParent ? (await getSpec(spec.parentPath)).content : draft;
+        setResult(await ask(text, trimmed, scopeLabel));
+      }
     } catch (err) {
       setError(err);
     } finally {
@@ -106,7 +123,10 @@ export function AskTab({
           question: asked,
           ...(gapTitleInput.trim() !== '' ? { title: gapTitleInput.trim() } : {}),
           ...(gapDescription.trim() !== '' ? { description: gapDescription.trim() } : {}),
-          specPath: askingParent ? spec.parentPath : spec.specPath,
+          // A cross-team gap is filed against the selected team's knowledge
+          // base. Writes stay siloed even when the read was not: no gap gets
+          // logged against another team's spec on their behalf.
+          specPath: askingParent || federating ? spec.parentPath : spec.specPath,
           specLabel: scopeLabel,
           answer: result.answer,
           ...(result.specGap !== null ? { specGap: result.specGap } : {}),
@@ -126,9 +146,23 @@ export function AskTab({
       <Panel className="p-3">
         <div className="flex items-center justify-between">
           <SectionLabel>Ask the spec</SectionLabel>
-          {!spec.isParent ? (
+          {/*
+            Scope widens left to right: this document, this team's knowledge
+            base, every team's. The last one exists because the questions that
+            are hardest to answer today — anything spanning hardware, app and
+            services — are exactly the ones no single document settles.
+          */}
+          {!spec.isParent || canFederate ? (
             <div className="flex overflow-hidden rounded-md border border-line text-[10px]">
-              {(['current', 'parent'] as const).map((value) => (
+              {([
+                ...(spec.isParent
+                  ? ([['current', 'this knowledge base']] as const)
+                  : ([
+                      ['current', 'this spec'],
+                      ['parent', 'knowledge base'],
+                    ] as const)),
+                ...(canFederate ? ([['teams', `all ${teams.length} teams`]] as const) : []),
+              ] as [typeof scope, string][]).map(([value, label]) => (
                 <button
                   key={value}
                   onClick={() => setScope(value)}
@@ -136,7 +170,7 @@ export function AskTab({
                     scope === value ? 'bg-accent/15 text-accent' : 'text-inkDim hover:text-ink'
                   }`}
                 >
-                  {value === 'current' ? 'this spec' : 'knowledge base'}
+                  {label}
                 </button>
               ))}
             </div>
@@ -200,6 +234,52 @@ export function AskTab({
             <p className="mt-1.5 text-sm font-medium leading-snug">{result.headline}</p>
           </Panel>
 
+          {/*
+            Teams disagreeing outranks everything below it. Deliberately shown
+            as two positions side by side with no verdict: which knowledge base
+            is right is a decision for their owners, and a tool that picked one
+            would turn a visible conflict into a confidently wrong answer.
+          */}
+          {result.crossTeamConflicts && result.crossTeamConflicts.length > 0 ? (
+            <Panel className="border-warning/60 bg-warning/5 p-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <SectionLabel>
+                  Teams disagree ({result.crossTeamConflicts.length})
+                </SectionLabel>
+                <span className="font-mono text-[10px] text-warning">unresolved — owners decide</span>
+              </div>
+
+              <ul className="mt-2 space-y-3">
+                {result.crossTeamConflicts.map((conflict, i) => (
+                  <li key={`${conflict.topic}-${i}`} className="rounded-md border border-line bg-panelAlt p-2">
+                    <p className="text-xs font-medium text-ink">{conflict.topic}</p>
+
+                    <ul className="mt-1.5 space-y-1">
+                      {conflict.positions.map((position, j) => (
+                        <li key={`${position.ruleId}-${j}`} className="flex flex-wrap items-baseline gap-2">
+                          <span className="shrink-0 rounded border border-secondary/50 px-1.5 py-0.5 font-mono text-[10px] text-secondary">
+                            {position.team}
+                          </span>
+                          <RuleChip rule={position.ruleId} onReveal={onReveal} />
+                          <span className="text-[11px] leading-relaxed text-ink">{position.says}</span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    {conflict.impact.trim() !== '' ? (
+                      <p className="mt-1.5 text-[11px] leading-relaxed text-inkDim">{conflict.impact}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+
+              <p className="mt-2 text-[10px] leading-relaxed text-inkDim">
+                Changes still go only to the owning team&rsquo;s knowledge base. Select that team to open a change
+                request against it.
+              </p>
+            </Panel>
+          ) : null}
+
           {result.keyFacts.length > 0 ? (
             <Panel className="overflow-hidden">
               <dl className="divide-y divide-line/60">
@@ -243,7 +323,13 @@ export function AskTab({
               </div>
               <ul className="divide-y divide-line/60">
                 {result.citations.map((c, i) => (
-                  <li key={`${c.ruleId}-${i}`} className="flex items-start gap-2 px-3 py-2">
+                  <li key={`${c.ruleId}-${i}`} className="flex flex-wrap items-start gap-2 px-3 py-2">
+                    {/* Which team owns the rule is part of a federated answer. */}
+                    {c.team ? (
+                      <span className="shrink-0 rounded border border-secondary/50 px-1.5 py-0.5 font-mono text-[10px] text-secondary">
+                        {c.team}
+                      </span>
+                    ) : null}
                     <RuleChip rule={c.ruleId} onReveal={onReveal} />
                     <span className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] ${STATUS[c.status].className}`}>
                       {STATUS[c.status].label}
@@ -408,6 +494,14 @@ export function AskTab({
                 {result.retrievedRules.map((rule, i) => (
                   <li key={`${rule.ruleId ?? i}`} className="px-3 py-2">
                     <div className="flex flex-wrap items-center gap-2">
+                      {rule.team ? (
+                        <span
+                          title={rule.team.name}
+                          className="rounded border border-secondary/50 px-1.5 py-0.5 font-mono text-[10px] text-secondary"
+                        >
+                          {rule.team.code}
+                        </span>
+                      ) : null}
                       {rule.ruleId ? <RuleChip rule={rule.ruleId} onReveal={onReveal} /> : null}
                       <span
                         className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${STATUS[rule.status].className}`}
@@ -429,6 +523,22 @@ export function AskTab({
               ? `whole spec searched (${result.retrieval.rulesConsidered} rules)`
               : `${result.retrieval.rulesSent} of ${result.retrieval.rulesConsidered} rules retrieved`}
           </p>
+
+          {/*
+            Per-team counts. "Hardware: 0 of 3" is the difference between a
+            team having nothing to say and a team whose knowledge base is
+            nearly empty — a reader cannot weigh a cross-team answer, or a
+            cross-team silence, without being able to tell those apart.
+          */}
+          {result.retrieval.teams && result.retrieval.teams.length > 0 ? (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 font-mono text-[10px] text-inkDim">
+              {result.retrieval.teams.map((team) => (
+                <span key={team.slug} className={team.rulesSent === 0 ? 'opacity-50' : ''}>
+                  {team.name}: {team.rulesSent}/{team.rulesConsidered}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </>
       ) : busy ? null : (
         <EmptyState>

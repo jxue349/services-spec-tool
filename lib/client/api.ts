@@ -152,8 +152,21 @@ export const requestParentChange = (body: {
 
 // --- ask -------------------------------------------------------------------
 
-export const ask = (spec: string, question: string, specLabel: string): Promise<AskResult> =>
-  request<AskResult>('/api/ask', { method: 'POST', body: JSON.stringify({ spec, question, specLabel }) });
+export const ask = (
+  spec: string,
+  question: string,
+  specLabel: string,
+  /**
+   * `teams` federates the read across every team's knowledge base; the server
+   * loads those itself and uses `spec` only as the unsaved draft of whichever
+   * team's parent `specPath` names.
+   */
+  options?: { scope?: 'spec' | 'teams'; specPath?: string },
+): Promise<AskResult> =>
+  request<AskResult>('/api/ask', {
+    method: 'POST',
+    body: JSON.stringify({ spec, question, specLabel, ...options }),
+  });
 
 export const flagGap = (body: {
   question: string;

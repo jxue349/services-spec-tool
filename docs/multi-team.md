@@ -1,7 +1,14 @@
 # Multi-team specs — design note
 
-Not built. This records the intended shape and the decisions it turns on, so
-the next person does not have to re-derive them.
+Built, except where marked. This records the shape and the decisions it turns
+on, so the next person does not have to re-derive them.
+
+Status: the layout, the registry and the selector are in (`lib/teams.ts`,
+`GET /api/teams`, `TeamSelector`). **Federated read with siloed write** is in
+(`lib/federated-retrieval.ts`, `lib/team-knowledge.ts`, the `teams` scope on
+`POST /api/ask`). Team-prefixed rule IDs are supported by `teamNamespaceFor`
+but not yet applied to existing spec content. Cross-team write permission is
+still undecided — see decision 3.
 
 ## The shape
 
@@ -74,6 +81,32 @@ Options:
 Federated read with siloed write is the recommendation: it matches how the
 organisation actually works, and the write boundary is where the risk is.
 
+**Decided and built.** Ask gained an "all N teams" scope. How it works, and
+the two things that were not obvious going in:
+
+- **Per-team retrieval budgets.** The budget is split evenly across the teams
+  that match, floored at 2,000 characters each, with the remainder
+  redistributed to whoever had more to say. One pooled ranking would let
+  Services' 172 rules fill the context and the contradicting three-rule
+  hardware knowledge base would never reach the model — which would quietly
+  defeat the only reason to read across teams at all.
+- **Conflicts are reported, never resolved.** When two teams define the same
+  behavior incompatibly, the answer says so, names both rules, and sets
+  confidence no higher than medium. It does not pick a winner, average the
+  two, or quietly answer from one. Same rule Parent Check follows for
+  contradictions, for the same reason: which knowledge base is right is a
+  product decision for their owners, and a tool that decides it silently
+  turns a visible conflict into a confidently wrong answer.
+
+The write boundary holds: the federated path only reads, the gap-flagging
+action files against the selected team's own knowledge base, and no route
+that writes accepts a scope. A test asserts that a federated answer calls no
+write method on the repo client.
+
+The caller's uncommitted editor draft is substituted for that team's
+committed parent, so "I just changed this rule — does it now contradict
+another team?" is answerable before the change lands rather than after.
+
 ### 2. Rule ID namespacing across teams
 
 `namespaceFor` derives a prefix from the spec's directory, so
@@ -92,9 +125,13 @@ followers are the ones who approve it.
 
 ## Sequencing
 
-1. Move to `specs/<team>/` now, one deployment per team. No code change.
-2. Add the registry and the team selector. Ask and Parent Check stay within a
-   team; everything else already works.
-3. Federated read across parents, with per-team labels on citations.
+1. ~~Move to `specs/<team>/`~~ — done.
+2. ~~Registry and team selector~~ — done.
+3. ~~Federated read across parents, with per-team labels on citations~~ —
+   done.
 4. Team-prefixed rule IDs, once more than one team has real specs — cheap
-   now, expensive after the IDs are cited in tickets.
+   now, expensive after the IDs are cited in tickets. **Still outstanding**:
+   the existing knowledge base uses bare `DOMAIN-###`, so a federated answer
+   can currently cite `ADDON-014` and `HW-007` without the IDs themselves
+   saying which team owns them. The team label on each citation covers this
+   in the UI; it does not cover an ID pasted into a ticket.

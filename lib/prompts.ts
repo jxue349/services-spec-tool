@@ -105,6 +105,100 @@ export function askPrompt(context: string, question: string, specLabel: string):
   ].join('\n');
 }
 
+/**
+ * Ask, across every team's knowledge base.
+ *
+ * The extract is grouped by team, and the answer has to stay grouped: a
+ * cross-team question is usually answered by several teams' rules in
+ * combination, and collapsing them into one undifferentiated answer hides
+ * which organisation owns which half of it.
+ *
+ * The second job is coherence. Where two teams' rules disagree, this reports
+ * the disagreement instead of resolving it — same rule the parent check
+ * follows, for the same reason: picking a winner is a product decision, and a
+ * tool that makes it silently turns a visible conflict into a wrong answer.
+ */
+export function federatedAskPrompt(context: string, question: string, teamNames: string[]): string {
+  return [
+    'You are answering a question for a Wyze support agent or internal user by',
+    'reading across the knowledge bases of several teams at once.',
+    '',
+    `Teams whose knowledge bases were searched: ${teamNames.join(', ')}.`,
+    '',
+    'The rules below are the relevant extract from each one, grouped under the',
+    'team that owns them. They are the only source you may use. Each team owns',
+    'its own rules; no team\'s knowledge base overrides another\'s.',
+    '',
+    '<rules>',
+    context,
+    '</rules>',
+    '',
+    SHARED_RULES,
+    '- Every rule belongs to the team it is listed under. Never attribute a rule',
+    '  to a team other than the one whose section it appears in.',
+    '',
+    'How to answer:',
+    '- "headline" is the answer in ONE sentence, able to stand alone. Assume it is',
+    '  the only thing a support agent reads while a customer waits.',
+    '- "answer" carries the reasoning. When teams contribute different parts of',
+    '  the answer, say which team establishes which part.',
+    '- "keyFacts" lifts out discrete values worth scanning — a price, a limit, a',
+    '  device list. Label them in two or three words.',
+    '- Cite the rule IDs the answer rests on, exactly as written above, and set',
+    '  "team" on each citation to the team it was listed under.',
+    '- Report each cited rule\'s status from the extract: confirmed, unverified,',
+    '  open, or superseded. Use "unknown" only when the extract shows no status.',
+    '- NEVER answer from a superseded rule as though it were current.',
+    '- If the rules do not settle the question, set confidence to "none", say so',
+    '  plainly, and describe what is missing in "specGap".',
+    '',
+    'Cross-team conflicts — the reason this reads across teams at all:',
+    '- If two teams\' rules describe the SAME behavior INCOMPATIBLY, record it in',
+    '  "crossTeamConflicts" with each team\'s position and the rule that states it.',
+    '- Do NOT resolve the conflict, pick the more plausible team, average the two,',
+    '  or quietly answer from one of them. Say in the headline that the teams',
+    '  disagree, and set confidence to "medium" at most.',
+    '- Two teams covering DIFFERENT aspects of one question is not a conflict.',
+    '  Neither is one team being silent where another has a rule. Only report a',
+    '  genuine incompatibility — a reader who is sent to reconcile two rules that',
+    '  agree stops trusting the ones that do not.',
+    '- Omit "crossTeamConflicts" entirely when the teams are coherent.',
+    '',
+    'Confidence: "high" = confirmed rules settle it outright and the teams agree.',
+    '"medium" = the rules leave room for interpretation, rest on unconfirmed',
+    'rules, or the teams disagree. "none" = the extract does not answer it.',
+    '',
+    '<question>',
+    question,
+    '</question>',
+    '',
+    // Placeholder ids and team names, not plausible ones: an example that
+    // looks like real content is an example a model will sometimes echo.
+    'Return exactly this JSON shape, replacing every placeholder with real',
+    'values taken from the rules above:',
+    '{',
+    '  "headline": "the answer in one standalone sentence",',
+    '  "answer": "the reasoning, saying which team establishes which part",',
+    '  "keyFacts": [{ "label": "<short label>", "value": "<the value>" }],',
+    '  "citations": [',
+    '    { "ruleId": "<RULE-ID>", "team": "<team it is listed under>",',
+    '      "status": "confirmed", "why": "what this rule contributes" }',
+    '  ],',
+    '  "confidence": "high",',
+    '  "specGap": "what no team defines, or null",',
+    '  "caveat": "why this answer is not yet authoritative, or null",',
+    '  "crossTeamConflicts": [',
+    '    { "topic": "<the behaviour the teams define incompatibly>",',
+    '      "positions": [',
+    '        { "team": "<first team>", "ruleId": "<RULE-ID>", "says": "<what it requires>" },',
+    '        { "team": "<second team>", "ruleId": "<RULE-ID>", "says": "<what it requires>" }',
+    '      ],',
+    '      "impact": "what breaks for a customer while the two disagree" }',
+    '  ]',
+    '}',
+  ].join('\n');
+}
+
 export function explorerScenarioPrompt(spec: string, scenario: Scenario): string {
   const devices = scenario.devices
     .map((d, i) => `  ${i + 1}. device "${d.name}" with device-level subscription: ${d.subscription}`)
