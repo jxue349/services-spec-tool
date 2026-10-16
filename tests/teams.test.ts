@@ -6,6 +6,7 @@ import {
   defaultTeam,
   nameFromSlug,
   parseTeamManifest,
+  matchTeamLabel,
   teamForPath,
   teamNamespaceFor,
 } from '@/lib/teams';
@@ -95,6 +96,34 @@ describe('nameFromSlug', () => {
   it('title-cases, keeping short tokens upper', () => {
     expect(nameFromSlug('app-experience')).toBe('App Experience');
     expect(nameFromSlug('hw-team')).toBe('HW Team');
+  });
+});
+
+describe('matchTeamLabel', () => {
+  const teams = buildTeams(PATHS, ROOT, MANIFEST);
+
+  it('matches the plain name or the code', () => {
+    expect(matchTeamLabel('Services', teams)?.slug).toBe('services');
+    expect(matchTeamLabel('SVC', teams)?.slug).toBe('services');
+    expect(matchTeamLabel('  hw team  ', teams)?.slug).toBe('hardware');
+  });
+
+  it('matches the heading form the model is shown', () => {
+    // The federated prompt renders "### Team: Services (SVC)", and the model
+    // copies that back. Dropping those silently would surface a cross-team
+    // conflict that nobody could file.
+    expect(matchTeamLabel('Services (SVC)', teams)?.slug).toBe('services');
+    expect(matchTeamLabel('HW Team (HW)', teams)?.slug).toBe('hardware');
+  });
+
+  it('does not match on a substring', () => {
+    expect(matchTeamLabel('Experience Platform', teams)).toBeNull();
+    expect(matchTeamLabel('Services and Support', teams)).toBeNull();
+  });
+
+  it('is null for an unknown or empty label', () => {
+    expect(matchTeamLabel('Marketing', teams)).toBeNull();
+    expect(matchTeamLabel('   ', teams)).toBeNull();
   });
 });
 

@@ -3,9 +3,17 @@
 import { useState } from 'react';
 import { RuleChip } from './RuleChip';
 import { Button, EmptyState, ErrorNote, Panel, SectionLabel } from './ui';
-import { ask, flagGap, getSpec } from '@/lib/client/api';
+import { ask, flagGap, getSpec, reportCrossTeamConflict } from '@/lib/client/api';
 import { ASK_QUESTION_MAX_CHARS } from '@/lib/schemas';
-import type { AskResult, GapResponse, SpecResponse, TeamSummary } from '@/lib/schemas';
+import { matchTeamLabel } from '@/lib/teams';
+import type {
+  AskResult,
+  CrossTeamConflict,
+  CrossTeamReportResponse,
+  GapResponse,
+  SpecResponse,
+  TeamSummary,
+} from '@/lib/schemas';
 
 /**
  * Ask — the main surface of the tool.
@@ -62,6 +70,11 @@ export function AskTab({
   const [flagged, setFlagged] = useState<GapResponse | null>(null);
   const [flagError, setFlagError] = useState<unknown>(null);
 
+  // Filed cross-team conflicts, keyed by conflict index and owning team.
+  const [filed, setFiled] = useState<Record<string, CrossTeamReportResponse>>({});
+  const [filing, setFiling] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<unknown>(null);
+
   if (spec === null) return <EmptyState>Load a spec first.</EmptyState>;
 
   // Reading across teams only means anything when there is more than one.
@@ -75,6 +88,43 @@ export function AskTab({
       ? 'Parent spec (knowledge base)'
       : spec.specPath;
 
+  // The team that owns the spec on screen — the reporter's own team.
+  const currentTeam = teams.find((t) => t.parentPath === spec.specPath || t.specPaths.includes(spec.specPath));
+
+  /**
+   * Maps the team label the model wrote back to a real team.
+   *
+   * The server resolves the slug against the repo anyway, so an unmatched
+   * label simply means no button rather than a bad report.
+   */
+  const teamByLabel = (label: string): TeamSummary | undefined => matchTeamLabel(label, teams) ?? undefined;
+
+  const fileConflict = async (conflict: CrossTeamConflict, index: number, owner: TeamSummary) => {
+    const key = `${index}:${owner.slug}`;
+    setFiling(key);
+    setFileError(null);
+    try {
+      const filedIssue = await reportCrossTeamConflict({
+        topic: conflict.topic,
+        // Normalise the model's label to the team's real name, so the issue
+        // reads consistently however the model happened to word it.
+        positions: conflict.positions.map((p) => ({
+          ...p,
+          team: teamByLabel(p.team)?.name ?? p.team,
+        })),
+        ...(conflict.impact.trim() !== '' ? { impact: conflict.impact } : {}),
+        ...(asked !== '' ? { question: asked } : {}),
+        owningTeamSlug: owner.slug,
+        ...(currentTeam ? { reportingTeamSlug: currentTeam.slug } : {}),
+      });
+      setFiled((prev) => ({ ...prev, [key]: filedIssue }));
+    } catch (err) {
+      setFileError(err);
+    } finally {
+      setFiling(null);
+    }
+  };
+
   const submit = async (q: string) => {
     const trimmed = q.trim();
     if (trimmed === '') return;
@@ -87,6 +137,8 @@ export function AskTab({
     setComposing(false);
     setGapTitleInput('');
     setGapDescription('');
+    setFiled({});
+    setFileError(null);
     try {
       if (federating) {
         // The server loads every team's parent itself. The draft goes along so
@@ -97,7 +149,9 @@ export function AskTab({
         // Asking the parent while a child is selected reads it fresh, so the
         // answer reflects the knowledge base as it stands right now.
         const text = askingParent ? (await getSpec(spec.parentPath)).content : draft;
-        setResult(await ask(text, trimmed, scopeLabel));
+        // Team codes so a question quoting the pre-migration `ENT-007` still
+        // reaches a rule the document now writes as `SVC-ENT-007`.
+        setResult(await ask(text, trimmed, scopeLabel, { teamCodes: teams.map((t) => t.code) }));
       }
     } catch (err) {
       setError(err);
@@ -269,13 +323,73 @@ export function AskTab({
                     {conflict.impact.trim() !== '' ? (
                       <p className="mt-1.5 text-[11px] leading-relaxed text-inkDim">{conflict.impact}</p>
                     ) : null}
+
+                    {/*
+                      Filing is allowed across teams; writing is not. Telling
+                      another team their rule conflicts with yours opens an
+                      issue on their knowledge base and changes nothing in it,
+                      so it needs no write access to their spec.
+                    */}
+                    {(() => {
+                      const owners = [
+                        ...new Map(
+                          conflict.positions
+                            .map((p) => teamByLabel(p.team))
+                            .filter((t): t is TeamSummary => t !== undefined)
+                            .map((t) => [t.slug, t] as const),
+                        ).values(),
+                      ];
+                      if (owners.length === 0) return null;
+
+                      return (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {owners.map((owner) => {
+                            const key = `${i}:${owner.slug}`;
+                            const done = filed[key];
+                            if (done) {
+                              return (
+                                <span key={key} className="text-[10px] text-accent">
+                                  {done.alreadyLogged ? 'Already filed with' : 'Filed with'} {done.owningTeam} ·{' '}
+                                  <a
+                                    href={done.issueUrl}
+                                    target="_blank"
+                                    rel="noreferrer noopener"
+                                    className="underline underline-offset-2"
+                                  >
+                                    Issue #{done.issueNumber} →
+                                  </a>
+                                </span>
+                              );
+                            }
+                            return (
+                              <Button
+                                key={key}
+                                onClick={() => void fileConflict(conflict, i, owner)}
+                                loading={filing === key}
+                                disabled={filing !== null}
+                                title={`Open an issue on the ${owner.name} knowledge base. Nothing in their spec changes.`}
+                              >
+                                Tell {owner.name}
+                                {currentTeam?.slug === owner.slug ? ' (your team)' : ''}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </li>
                 ))}
               </ul>
 
+              {fileError ? (
+                <div className="mt-2">
+                  <ErrorNote error={fileError} onDismiss={() => setFileError(null)} />
+                </div>
+              ) : null}
+
               <p className="mt-2 text-[10px] leading-relaxed text-inkDim">
-                Changes still go only to the owning team&rsquo;s knowledge base. Select that team to open a change
-                request against it.
+                Reporting a conflict opens an issue on that team&rsquo;s knowledge base and changes nothing in it.
+                Editing their rules stays with them.
               </p>
             </Panel>
           ) : null}

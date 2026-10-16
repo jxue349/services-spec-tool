@@ -3,12 +3,13 @@
 Built, except where marked. This records the shape and the decisions it turns
 on, so the next person does not have to re-derive them.
 
-Status: the layout, the registry and the selector are in (`lib/teams.ts`,
-`GET /api/teams`, `TeamSelector`). **Federated read with siloed write** is in
-(`lib/federated-retrieval.ts`, `lib/team-knowledge.ts`, the `teams` scope on
-`POST /api/ask`). Team-prefixed rule IDs are supported by `teamNamespaceFor`
-but not yet applied to existing spec content. Cross-team write permission is
-still undecided — see decision 3.
+Status: all four decisions are made and built — the layout and registry
+(`lib/teams.ts`, `GET /api/teams`, `TeamSelector`), **federated read with
+siloed write** (`lib/federated-retrieval.ts`, `lib/team-knowledge.ts`, the
+`teams` scope on `POST /api/ask`), **team-prefixed rule IDs**
+(`lib/rule-id.ts`, `lib/migrate-rule-ids.ts`, `npm run migrate:rule-ids`), and
+**cross-team filing without write access** (`lib/cross-team.ts`,
+`POST /api/cross-team/report`).
 
 ## The shape
 
@@ -115,6 +116,33 @@ another team?" is answerable before the change lands rather than after.
 The prefix needs the team in it (`HW-PLUGINPAGE-001`), which is a change to
 the ID convention and therefore to existing specs.
 
+**Decided and built.** `ENT-007` is now `SVC-ENT-007`, so an ID pasted into a
+ticket says who owns the rule. What this turned on:
+
+- **The grammar lives in one module** (`lib/rule-id.ts`). It was duplicated
+  in `spec-retrieval` and `client/rules`; two copies were survivable while
+  the grammar was fixed, and are not now, because a question that reaches
+  retrieval but not the rule chip is a bug nobody would think to look for.
+- **A team prefix is an explicit list, never "any leading segment."** The
+  loose reading would make `R-101` resolve to `CAMPLUS-R-101`, sending a
+  parent's citation into a child spec — a guarantee the old exact-match code
+  gave for free.
+- **Two prefixed IDs must name the same team.** `SVC-ENT-007` and
+  `HW-ENT-007` are different rules; matching them on the shared `ENT-007`
+  would undo the migration's whole purpose.
+- **Old citations keep resolving.** A bare `ENT-007` from a Jira ticket
+  written before the migration still finds `SVC-ENT-007`, in retrieval, in
+  the rule chip, and in the additions dedupe. Without that, every existing
+  citation goes dead on merge day.
+- **Only defined IDs are renamed.** The Source column is full of Jira keys
+  shaped exactly like rule IDs; they are never in definition position, so
+  they are never in the rename set. URLs are masked during the rewrite.
+
+`npm run migrate:rule-ids` is a dry run; `-- --apply` opens one pull request.
+It is idempotent, and the invariant worth re-checking on any future run is
+that the migrated document is byte-identical to the original once the team
+prefix is stripped back out.
+
 ### 3. Who may write where
 
 Followers already scope *review* per parent. Write gating is separate: should
@@ -123,15 +151,33 @@ parent? Probably yes — a cross-team request is how disagreements surface —
 but it should be visibly a cross-team request, and the owning team's
 followers are the ones who approve it.
 
+**Decided and built: file across teams, write only your own.** Granting real
+cross-team write was rejected as more machinery than the problem needs, so a
+team raises a conflict against another team's knowledge base in the weakest
+form that works — an issue (`POST /api/cross-team/report`, label
+`cross-team-conflict`).
+
+- It changes nothing in the other team's spec, which is precisely what lets
+  it need no write access to that spec. A test asserts the route calls no
+  write method on the repo client.
+- It is addressed to the **owning** team's followers, not the reporter's, and
+  says on its face that it was raised from outside and that nothing was
+  changed.
+- Dedupe is keyed on the pair of rule IDs alone — not the topic (two people
+  describe the same clash differently) and not the team labels, which are
+  model-generated text that varies between "Services", "SVC" and
+  "Services (SVC)". `matchTeamLabel` absorbs that variance on the way in.
+
+Two routes were filing against the globally configured parent regardless of
+team, which this fixed: `/api/spec/request-change` was merging a hardware
+spec's rules into the services knowledge base, and `/api/gaps` was notifying
+the services followers about every team's gaps.
+
 ## Sequencing
 
 1. ~~Move to `specs/<team>/`~~ — done.
 2. ~~Registry and team selector~~ — done.
 3. ~~Federated read across parents, with per-team labels on citations~~ —
    done.
-4. Team-prefixed rule IDs, once more than one team has real specs — cheap
-   now, expensive after the IDs are cited in tickets. **Still outstanding**:
-   the existing knowledge base uses bare `DOMAIN-###`, so a federated answer
-   can currently cite `ADDON-014` and `HW-007` without the IDs themselves
-   saying which team owns them. The team label on each citation covers this
-   in the UI; it does not cover an ID pasted into a ticket.
+4. ~~Team-prefixed rule IDs~~ — done, and the migration is applied.
+5. ~~Cross-team filing without write access~~ — done.

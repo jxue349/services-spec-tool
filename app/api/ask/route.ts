@@ -75,7 +75,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     const result = federated
       ? await askAcrossTeams(body.spec, body.question, body.specPath)
-      : await askOneSpec(body.spec, body.question, body.specLabel);
+      : await askOneSpec(body.spec, body.question, body.specLabel, body.teamCodes ?? []);
 
     return NextResponse.json(result);
   } catch (err) {
@@ -91,8 +91,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 }
 
-async function askOneSpec(spec: string, question: string, specLabel: string): Promise<AskResult> {
-  const context = retrieveContext(spec, question);
+async function askOneSpec(
+  spec: string,
+  question: string,
+  specLabel: string,
+  teamCodes: readonly string[],
+): Promise<AskResult> {
+  const context = retrieveContext(spec, question, undefined, teamCodes);
   const rendered = renderContext(context, spec);
 
   // Surfaced to the client so the answer can be checked against its sources.

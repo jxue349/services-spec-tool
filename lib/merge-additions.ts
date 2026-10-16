@@ -1,3 +1,5 @@
+import { extractRuleIds } from './client/rules';
+import { ruleIdMatches } from './rule-id';
 import type { ProposedAddition } from './schemas';
 
 /**
@@ -29,10 +31,19 @@ export function appendAdditions(
   parent: string,
   additions: readonly ProposedAddition[],
   childLabel: string,
+  /**
+   * Team codes, so a proposed `ENT-007` is recognised as already present when
+   * the parent has since been migrated to `SVC-ENT-007`. Without this the
+   * migration would quietly make every earlier merge re-appliable, and the
+   * knowledge base would collect duplicate rules under two spellings.
+   */
+  teamCodes: readonly string[] = [],
 ): MergeResult {
   const applied: string[] = [];
   const skipped: string[] = [];
   const blocks: string[] = [];
+
+  const parentIds = extractRuleIds(parent);
 
   for (const addition of additions) {
     const id = addition.ruleId.trim();
@@ -40,8 +51,11 @@ export function appendAdditions(
     if (id === '' || markdown === '') continue;
 
     // Idempotent: re-requesting a change must not duplicate rules the parent
-    // already absorbed from an earlier request.
-    if (ruleIdPattern(id).test(parent)) {
+    // already absorbed from an earlier request — under either spelling.
+    if (
+      ruleIdPattern(id).test(parent) ||
+      parentIds.some((existing) => ruleIdMatches(existing, id, teamCodes))
+    ) {
       skipped.push(id);
       continue;
     }

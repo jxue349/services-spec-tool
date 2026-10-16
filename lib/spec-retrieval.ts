@@ -1,3 +1,5 @@
+import { RULE_ID_CORE as ID_CORE, bareRuleId } from './rule-id';
+
 /**
  * Retrieval over a spec document.
  *
@@ -26,7 +28,6 @@ export type RuleBlock = {
 
 export type RuleStatus = 'confirmed' | 'unverified' | 'open' | 'superseded';
 
-const ID_CORE = String.raw`[A-Z][A-Z0-9]{0,15}-(?:R-)?\d{1,4}`;
 
 /** Status vocabulary used by the knowledge base, matched case-insensitively. */
 function statusOf(text: string): RuleStatus | null {
@@ -131,12 +132,21 @@ export type ScoredBlock = RuleBlock & { score: number };
  * An explicit rule id in the question is decisive — someone asking about
  * ADDON-011 wants ADDON-011 — so it outranks any amount of term overlap.
  */
-export function rankBlocks(blocks: readonly RuleBlock[], question: string): ScoredBlock[] {
+export function rankBlocks(
+  blocks: readonly RuleBlock[],
+  question: string,
+  /** Team codes, so asking `ENT-007` still finds `SVC-ENT-007`. */
+  teamCodes: readonly string[] = [],
+): ScoredBlock[] {
   const qTerms = terms(question);
   const qSet = new Set(qTerms);
   const askedIds = new Set(
     (question.toUpperCase().match(new RegExp(ID_CORE, 'g')) ?? []).map((id) => id.toUpperCase()),
   );
+  // A citation written before the migration says `ENT-007`; the rule now says
+  // `SVC-ENT-007`. Both have to reach the same rule or every Jira ticket that
+  // quotes an id goes dead the day the prefix lands.
+  const askedBare = new Set([...askedIds].map((id) => bareRuleId(id, teamCodes)));
 
   // Rarer terms carry more signal than ones every rule happens to contain.
   const docFreq = new Map<string, number>();
@@ -149,7 +159,12 @@ export function rankBlocks(blocks: readonly RuleBlock[], question: string): Scor
     .map((block) => {
       let score = 0;
 
-      if (block.id !== null && askedIds.has(block.id.toUpperCase())) score += 1_000;
+      if (
+        block.id !== null &&
+        (askedIds.has(block.id.toUpperCase()) || askedBare.has(bareRuleId(block.id, teamCodes)))
+      ) {
+        score += 1_000;
+      }
 
       for (const t of new Set(terms(block.text))) {
         if (!qSet.has(t)) continue;
@@ -187,12 +202,14 @@ export function retrieveContext(
   spec: string,
   question: string,
   budget: number = CONTEXT_BUDGET,
+  /** Team codes, so asking `ENT-007` still finds `SVC-ENT-007`. */
+  teamCodes: readonly string[] = [],
 ): RetrievedContext {
   if (spec.length <= WHOLE_DOCUMENT_LIMIT) {
     return { blocks: [], chars: spec.length, wholeDocument: true };
   }
 
-  const ranked = rankBlocks(parseRuleBlocks(spec), question);
+  const ranked = rankBlocks(parseRuleBlocks(spec), question, teamCodes);
 
   const chosen: ScoredBlock[] = [];
   let chars = 0;

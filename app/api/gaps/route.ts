@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
 import { followersPathFor, parseFollowers } from '@/lib/followers';
-import { GAP_LABEL, gapMarker, gapTitle, recallRecentGap, rememberGap } from '@/lib/gaps';
+import { GAP_LABEL, GAP_MARKER_NAME, gapKey, gapMarker, gapTitle, recallRecentGap, rememberGap } from '@/lib/gaps';
 import { createSpecRepoClient } from '@/lib/github';
 import { BadRequestError, readJson } from '@/lib/http';
 import { NotSignedInError, requireWriteIdentity } from '@/lib/auth/require-user';
 import { checkRateLimit, clientKey } from '@/lib/ratelimit';
 import { GapRequestSchema } from '@/lib/schemas';
 import type { GapResponse } from '@/lib/schemas';
+import { parentPathForSpec } from '@/lib/teams';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -69,14 +70,18 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     // Asking the same thing twice should join the existing issue, not add
     // another row to the owners' backlog.
-    const existing = await client.findOpenGapIssue(body.question, GAP_LABEL);
+    const existing = await client.findOpenIssueByMarker(gapKey(body.question), GAP_MARKER_NAME, GAP_LABEL);
     if (existing !== null) {
       rememberGap(title, existing);
       const already: GapResponse = { issueUrl: existing.url, issueNumber: existing.number, alreadyLogged: true };
       return NextResponse.json(already);
     }
 
-    const followersFile = await client.getFile(env.baseBranch, followersPathFor(env.parentPath));
+    // Followers of the team that owns the spec asked about. With several
+    // teams there is no single parent, and notifying the configured one
+    // would send every hardware gap to the services owners.
+    const owningParent = parentPathForSpec(body.specPath, env.specRoot, env.parentPath);
+    const followersFile = await client.getFile(env.baseBranch, followersPathFor(owningParent));
     const followers = followersFile === null ? [] : parseFollowers(followersFile.content);
 
     const issue = await client.createIssue({

@@ -10,6 +10,7 @@ import { resolveSpecPathValue } from '@/lib/resolve-spec-path';
 import { RequestChangeSchema } from '@/lib/schemas';
 import type { RequestChangeResponse } from '@/lib/schemas';
 import { InvalidSpecPathError } from '@/lib/spec-paths';
+import { TEAMS_MANIFEST, buildTeams, parentPathForSpec, parseTeamManifest } from '@/lib/teams';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,10 +33,24 @@ export async function POST(req: Request): Promise<NextResponse> {
     const { author, email } = await requireWriteIdentity();
     const client = createSpecRepoClient(env);
 
-    const parent = await client.getFile(env.baseBranch, env.parentPath);
-    if (parent === null) throw new SpecNotFoundError(env.parentPath);
+    // A spec's knowledge base is its OWN team's. Using the configured
+    // parent would check a hardware spec against the services KB and then
+    // merge its rules into the wrong team's document.
+    const parentPath = parentPathForSpec(childPath, env.specRoot, env.parentPath);
 
-    const merge = appendAdditions(parent.content, body.additions, body.childLabel);
+    const parent = await client.getFile(env.baseBranch, parentPath);
+    if (parent === null) throw new SpecNotFoundError(parentPath);
+
+    // Team codes so a proposed `ENT-007` is recognised as already present
+    // when the parent now writes it as `SVC-ENT-007`.
+    const manifestFile = await client.getFile(env.baseBranch, `${env.specRoot}/${TEAMS_MANIFEST}`);
+    const teamCodes = buildTeams(
+      await client.listSpecFiles(env.baseBranch, env.specRoot),
+      env.specRoot,
+      parseTeamManifest(manifestFile?.content ?? null),
+    ).map((team) => team.code);
+
+    const merge = appendAdditions(parent.content, body.additions, body.childLabel, teamCodes);
 
     const contradictions = body.conflicts.filter((c) => c.kind === 'contradiction');
     if (merge.applied.length === 0 && contradictions.length === 0) {
@@ -48,7 +63,7 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     // Followers live next to the parent spec. Missing file is fine — the PR
     // still opens, just with nobody explicitly asked.
-    const followersFile = await client.getFile(env.baseBranch, followersPathFor(env.parentPath));
+    const followersFile = await client.getFile(env.baseBranch, followersPathFor(parentPath));
     const followers = followersFile === null ? [] : parseFollowers(followersFile.content);
 
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, '');
@@ -62,7 +77,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (merge.applied.length > 0) {
       await client.putFile({
         branch,
-        path: env.parentPath,
+        path: parentPath,
         content: merge.content,
         message: `spec(parent): merge ${merge.applied.length} rule(s) from ${body.childLabel}`,
         sha: parent.sha,
@@ -74,7 +89,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       // wrong too. Instead record the request alongside the parent.
       await client.putFile({
         branch,
-        path: `${env.parentPath.replace(/\.md$/i, '')}.requests/${stamp}.md`,
+        path: `${parentPath.replace(/\.md$/i, '')}.requests/${stamp}.md`,
         content: renderRequestNote(body.childLabel, childPath, contradictions),
         message: `spec(parent): conflict report from ${body.childLabel}`,
         ...(author ? { author } : {}),

@@ -153,6 +153,38 @@ export function buildTeams(
   });
 }
 
+/**
+ * Resolves a team label written by the model back to a real team.
+ *
+ * Needed because the label is generated text, not an identifier. Asked to
+ * name the team a rule belongs to, a model will variously answer "Services",
+ * "SVC", or — copying the heading it was given — "Services (SVC)". Matching
+ * only the exact name silently drops every citation in the third form, which
+ * shows up as a conflict nobody can file rather than as an error.
+ *
+ * Deliberately not fuzzy: it matches the name or the code as a whole token,
+ * never a substring, so "App Experience" cannot match "Experience Platform".
+ */
+export function matchTeamLabel<T extends { name: string; code: string }>(
+  label: string,
+  teams: readonly T[],
+): T | null {
+  const raw = label.trim().toUpperCase();
+  if (raw === '') return null;
+
+  // "Services (SVC)" -> ["SERVICES (SVC)", "SERVICES", "SVC"]
+  const withoutSuffix = raw.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  const inParens = /\(([^)]*)\)/.exec(raw)?.[1]?.trim() ?? '';
+  const candidates = [raw, withoutSuffix, inParens].filter((c) => c !== '');
+
+  for (const candidate of candidates) {
+    const hit = teams.find((team) => team.name.toUpperCase() === candidate || team.code.toUpperCase() === candidate);
+    if (hit !== undefined) return hit;
+  }
+
+  return null;
+}
+
 /** The team a path belongs to, or null when it is outside every team. */
 export function teamForPath(path: string, teams: readonly Team[]): Team | null {
   return teams.find((team) => path === team.parentPath || team.specPaths.includes(path)) ?? null;

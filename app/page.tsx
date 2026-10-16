@@ -133,7 +133,9 @@ export default function Page() {
       const editor = editorRef.current;
       if (editor === null) return;
 
-      const range = findRuleRange(draft, rule);
+      // Team codes let a chip for `SVC-ENT-007` still find `ENT-007` in a
+      // knowledge base that has not been migrated yet, and the reverse.
+      const range = findRuleRange(draft, rule, teams.map((t) => t.code));
       if (range === null) {
         // A cited rule that is not in the spec is itself worth seeing.
         editor.focus();
@@ -149,7 +151,7 @@ export default function Page() {
       editor.classList.add('flash-accent');
       window.setTimeout(() => editor.classList.remove('flash-accent'), 750);
     },
-    [draft],
+    [draft, teams],
   );
 
   const handlePull = () => {

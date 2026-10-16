@@ -6,7 +6,10 @@ import { FlatCompat } from '@eslint/eslintrc';
 const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 
 const config = [
-  { ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts'] },
+  // `.next-verify/**` is the build:verify output. It is gitignored, but
+  // ESLint does not read .gitignore, so without this a developer who has run
+  // build:verify gets thousands of lint errors from generated code.
+  { ignores: ['.next/**', '.next-verify/**', 'node_modules/**', 'next-env.d.ts'] },
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
   {
     rules: {

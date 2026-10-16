@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createRecentMemo, marker, markerIn, markerKey } from './issue-marker';
 
 /**
  * The gap log: questions the knowledge base could not answer.
@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
  */
 
 export const GAP_LABEL = 'kb-gap';
+export const GAP_MARKER_NAME = 'kb-gap-key';
 
 /** Default title when the user does not write one. */
 export function gapTitle(question: string): string {
@@ -25,8 +26,7 @@ export function gapTitle(question: string): string {
  * differently. The question is what makes two reports the same report.
  */
 export function gapKey(question: string): string {
-  const normalised = question.replace(/\s+/g, ' ').trim().toLowerCase();
-  return createHash('sha256').update(normalised).digest('hex').slice(0, 16);
+  return markerKey(question);
 }
 
 /**
@@ -34,40 +34,18 @@ export function gapKey(question: string): string {
  * is edited — by this app or by a human afterwards.
  */
 export function gapMarker(question: string): string {
-  return `<!-- kb-gap-key: ${gapKey(question)} -->`;
+  return marker(GAP_MARKER_NAME, gapKey(question));
 }
 
 /** Finds our marker in an existing issue body. */
-export function markerIn(body: string | null | undefined): string | null {
-  const hit = /<!--\s*kb-gap-key:\s*([0-9a-f]{16})\s*-->/.exec(body ?? '');
-  return hit?.[1] ?? null;
+export function gapMarkerIn(body: string | null | undefined): string | null {
+  return markerIn(body, GAP_MARKER_NAME);
 }
 
-/**
- * Recently filed gaps, by key.
- *
- * GitHub's issue list is eventually consistent: an issue created a moment ago
- * is not reliably returned by the next list call, so two identical flags a few
- * seconds apart both look new and both get filed. Observed against a real
- * repo, not theorised. This closes the window for the case that actually
- * happens — the same question flagged twice in quick succession.
- *
- * Per-process and short-lived, like the rate limiter: a best-effort guard, not
- * distributed coordination. The API check remains the real dedupe.
- */
-const RECENT_TTL_MS = 10 * 60_000;
-
-const recentGaps = new Map<string, { url: string; number: number; at: number }>();
+const recent = createRecentMemo();
 
 export function recallRecentGap(question: string, now: number = Date.now()): { url: string; number: number } | null {
-  const key = gapKey(question);
-  const hit = recentGaps.get(key);
-  if (hit === undefined) return null;
-  if (now - hit.at > RECENT_TTL_MS) {
-    recentGaps.delete(key);
-    return null;
-  }
-  return { url: hit.url, number: hit.number };
+  return recent.recall(gapKey(question), now);
 }
 
 export function rememberGap(
@@ -75,10 +53,10 @@ export function rememberGap(
   issue: { url: string; number: number },
   now: number = Date.now(),
 ): void {
-  recentGaps.set(gapKey(question), { ...issue, at: now });
+  recent.remember(gapKey(question), issue, now);
 }
 
 /** Test-only reset. */
 export function __resetRecentGaps(): void {
-  recentGaps.clear();
+  recent.reset();
 }

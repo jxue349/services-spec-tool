@@ -63,7 +63,7 @@ vi.mock('@/lib/github', async (importOriginal) => ({
       listCommitsForPath: vi.fn(async () => []),
       requestReviewers: forbidden('requestReviewers'),
       updatePullRequestBody: forbidden('updatePullRequestBody'),
-      findOpenGapIssue: vi.fn(async () => null),
+      findOpenIssueByMarker: vi.fn(async () => null),
     }) as unknown as SpecRepoClient,
 }));
 

@@ -3,35 +3,7 @@
  * cites. Pure string work — no DOM — so it is trivially testable.
  */
 
-/**
- * A rule ID.
- *
- * Real specs number rules by domain — `TIER-001`, `ADDON-005`, `LIFE-014` —
- * rather than with a single `R-` series, and child specs namespace theirs
- * (`CAMPLUS-R-101`) so merging into the parent cannot collide. All three
- * shapes have to match, plus bare `R-101`.
- */
-const RULE_ID_CORE = String.raw`[A-Z][A-Z0-9]{0,15}-(?:R-)?\d{1,4}`;
-
-/**
- * Where a rule is *defined*, as opposed to merely mentioned.
- *
- * This distinction is load-bearing. A spec's Source column is full of Jira
- * keys — `BCS-137`, `BUG-60257` — that are shaped exactly like rule IDs, so
- * matching anywhere would list tickets as rules. A definition is the first
- * cell of a table row, the head of a list item, or a heading.
- */
-function definitionForms(idPattern: string): string {
-  const nb = '(?<![A-Za-z0-9-])';
-  return [
-    // | TIER-001 | ...        (markdown table, the common form in real specs)
-    `^[ \\t]*\\|[ \\t]*(?:\\*\\*|__)?${nb}${idPattern}(?:\\*\\*|__)?[ \\t]*\\|`,
-    // - **R-101** — ...       (bullet list)
-    `^[ \\t]*(?:[-*+][ \\t]+)?(?:\\*\\*|__)?${nb}${idPattern}(?:\\*\\*|__)?(?![A-Za-z0-9-])`,
-    // ### R-101 ...
-    `^#{1,6}[ \\t]+(?:\\*\\*|__)?${nb}${idPattern}`,
-  ].join('|');
-}
+import { RULE_ID_CORE, definitionForms, splitRuleId } from '../rule-id';
 
 const RULE_DEFINITION = new RegExp(`(?:${definitionForms(`(${RULE_ID_CORE})`)})`, 'gm');
 
@@ -73,19 +45,50 @@ export type RuleRange = { start: number; end: number; line: number };
  * (`- **R-102** — ...`) over a passing citation elsewhere, and returns the span
  * through the end of that paragraph.
  */
-export function findRuleRange(spec: string, ruleId: string): RuleRange | null {
-  const id = escapeRegExp(ruleId.trim());
-  if (id === '') return null;
+export function findRuleRange(
+  spec: string,
+  ruleId: string,
+  /**
+   * Team codes, so `SVC-ENT-007` can be found in a document that still writes
+   * `ENT-007` and the other way round.
+   *
+   * Explicit rather than "any leading segment": treating any segment as a
+   * team prefix would make `R-101` land on `CAMPLUS-R-101`, so a parent's
+   * citation would jump into a child spec.
+   */
+  teamCodes: readonly string[] = [],
+): RuleRange | null {
+  const asked = ruleId.trim();
+  if (asked === '') return null;
 
-  // A rule id must not match inside a longer id: asking for R-101 must never
-  // land on CAMPLUS-R-101, or a parent citation would jump into a child spec.
+  // A rule id must not match inside a longer id.
   const notIdChar = '(?<![A-Za-z0-9-])';
 
-  const definition = new RegExp(definitionForms(id), 'm');
-  const citation = new RegExp(`${notIdChar}${id}(?![A-Za-z0-9-])`);
+  // Exact first, then the same rule written with or without its team prefix.
+  const { team, bare } = splitRuleId(asked, teamCodes);
+  const candidates = [
+    ...new Set([
+      asked,
+      // The pre-migration spelling, for a document not yet migrated.
+      bare,
+      // Only widen to other teams when the citation names no team itself.
+      // `SVC-ENT-007` must never land on `HW-ENT-007`: those are two rules.
+      ...(team === null ? teamCodes.map((code) => `${code.toUpperCase()}-${bare}`) : []),
+    ]),
+  ]
+    .filter((candidate) => candidate !== '')
+    .map(escapeRegExp);
 
-  // Prefer the definition line; fall back to the first citation anywhere.
-  const match = definition.exec(spec) ?? citation.exec(spec);
+  const match =
+    candidates.reduce<RegExpExecArray | null>(
+      (found, id) => found ?? new RegExp(definitionForms(id), 'mi').exec(spec),
+      null,
+    ) ??
+    candidates.reduce<RegExpExecArray | null>(
+      (found, id) => found ?? new RegExp(`${notIdChar}${id}(?![A-Za-z0-9-])`, 'i').exec(spec),
+      null,
+    );
+
   if (match === null) return null;
 
   const start = match.index;

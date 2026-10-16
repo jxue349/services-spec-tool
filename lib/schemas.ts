@@ -175,6 +175,19 @@ export const AskRequestSchema = z.object({
    * feature exists for, and it would be useless against committed text only.
    */
   specPath: z.string().min(1).max(400).optional(),
+  /**
+   * Known team codes, so a question quoting the pre-migration `ENT-007`
+   * reaches a rule now written `SVC-ENT-007`.
+   *
+   * Sent by the client because the single-spec path deliberately never reads
+   * the repo, and loading the team list to answer one question would undo
+   * that. Only ever used to strip a prefix while ranking, so the worst a bad
+   * value can do is make the caller's own retrieval slightly worse.
+   */
+  teamCodes: z
+    .array(z.string().regex(/^[A-Z0-9]{1,16}$/))
+    .max(20)
+    .optional(),
 });
 
 const ruleStatus = z.enum(['confirmed', 'unverified', 'open', 'superseded', 'unknown']);
@@ -315,6 +328,46 @@ export const GapRequestSchema = z.object({
   rulesConsidered: z.number().int().nonnegative().max(100_000).optional(),
   rulesRetrieved: z.number().int().nonnegative().max(100_000).optional(),
 });
+
+/**
+ * Filing a cross-team contradiction with the team that owns the rule.
+ *
+ * Read is federated and so is filing; writing is not. This request opens an
+ * issue on the owning team's knowledge base and changes nothing in it, which
+ * is what lets one team raise a conflict against another without holding
+ * write access to their spec.
+ */
+export const CrossTeamReportSchema = z.object({
+  topic: z.string().min(1).max(200),
+  positions: z
+    .array(
+      z.object({
+        team: z.string().min(1).max(80),
+        ruleId: z.string().min(1).max(40),
+        says: z.string().max(2_000),
+      }),
+    )
+    .min(2)
+    .max(6),
+  impact: z.string().max(2_000).optional(),
+  /** The question that surfaced the conflict, for context in the issue. */
+  question: z.string().max(ASK_QUESTION_MAX_CHARS).optional(),
+  /** Anything the reporter wants the owners to know. */
+  note: z.string().max(4_000).optional(),
+  /** Slug of the team whose knowledge base this is filed against. */
+  owningTeamSlug: z.string().min(1).max(80),
+  /** Slug of the team the reporter was working in, when known. */
+  reportingTeamSlug: z.string().max(80).optional(),
+});
+
+export type CrossTeamReportResponse = {
+  issueUrl: string;
+  issueNumber: number;
+  /** True when an open issue for this same pair of rules already existed. */
+  alreadyLogged: boolean;
+  /** Team the issue was filed against, for the confirmation message. */
+  owningTeam: string;
+};
 
 export type GapResponse = {
   issueUrl: string;

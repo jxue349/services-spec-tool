@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "stub:glean": "node tools/glean-stub.mjs"
+    "stub:glean": "node tools/glean-stub.mjs",
+    "migrate:rule-ids": "node --env-file=.env ./node_modules/.bin/vite-node tools/migrate-rule-ids.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1148.0",

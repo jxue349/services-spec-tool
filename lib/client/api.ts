@@ -6,6 +6,7 @@ import type {
   CommitResponse,
   ConflictFinding,
   ConflictReport,
+  CrossTeamReportResponse,
   ProposedAddition,
   RequestChangeResponse,
   SpecListResponse,
@@ -152,6 +153,26 @@ export const requestParentChange = (body: {
 
 // --- ask -------------------------------------------------------------------
 
+/**
+ * Files a cross-team contradiction with the team that owns the rule.
+ *
+ * Opens an issue and changes nothing in their spec — which is what lets a
+ * team raise a conflict against a knowledge base they cannot write to.
+ */
+export const reportCrossTeamConflict = (input: {
+  topic: string;
+  positions: { team: string; ruleId: string; says: string }[];
+  impact?: string;
+  question?: string;
+  note?: string;
+  owningTeamSlug: string;
+  reportingTeamSlug?: string;
+}): Promise<CrossTeamReportResponse> =>
+  request<CrossTeamReportResponse>('/api/cross-team/report', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+
 export const ask = (
   spec: string,
   question: string,
@@ -161,7 +182,7 @@ export const ask = (
    * loads those itself and uses `spec` only as the unsaved draft of whichever
    * team's parent `specPath` names.
    */
-  options?: { scope?: 'spec' | 'teams'; specPath?: string },
+  options?: { scope?: 'spec' | 'teams'; specPath?: string; teamCodes?: string[] },
 ): Promise<AskResult> =>
   request<AskResult>('/api/ask', {
     method: 'POST',

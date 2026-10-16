@@ -1,6 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import type { SpecEnv } from './env';
-import { gapKey, markerIn } from './gaps';
+import { markerIn } from './issue-marker';
 import { isTeamParent, parentPathForSpec } from './teams';
 import type { CommitResponse, HistoryEntry, SpecResponse } from './schemas';
 
@@ -45,7 +45,18 @@ export interface SpecRepoClient {
   requestReviewers(prNumber: number, reviewers: string[]): Promise<{ requested: string[]; refused: string[] }>;
   updatePullRequestBody(prNumber: number, body: string): Promise<void>;
   /** An already-open gap issue for this exact question, if there is one. */
-  findOpenGapIssue(question: string, label: string): Promise<{ url: string; number: number } | null>;
+  /**
+   * An open issue carrying this identity marker, or null.
+   *
+   * Keyed on a marker rather than the title because titles are editable, and
+   * parameterised by marker name so the gap log and cross-team conflict
+   * reports can share one dedupe mechanism over different identities.
+   */
+  findOpenIssueByMarker(
+    key: string,
+    markerName: string,
+    label: string,
+  ): Promise<{ url: string; number: number } | null>;
   createIssue(args: { title: string; body: string; labels: string[] }): Promise<{ url: string; number: number }>;
   lastCommitForPath(ref: string, path: string): Promise<HistoryEntry | null>;
   listCommitsForPath(ref: string, path: string, limit: number): Promise<HistoryEntry[]>;
@@ -325,7 +336,7 @@ export function createSpecRepoClient(env: SpecEnv): SpecRepoClient {
       await octokit.rest.pulls.update({ owner, repo, pull_number: prNumber, body });
     },
 
-    async findOpenGapIssue(question, label) {
+    async findOpenIssueByMarker(key, markerName, label) {
       const res = await octokit.rest.issues.listForRepo({
         owner,
         repo,
@@ -339,8 +350,7 @@ export function createSpecRepoClient(env: SpecEnv): SpecRepoClient {
       // Matched on a marker in the body rather than the title, because the
       // title is user-editable: two people wording the heading differently
       // must not produce two issues for one question.
-      const needle = gapKey(question);
-      const hit = res.data.find((issue) => markerIn(issue.body) === needle);
+      const hit = res.data.find((issue) => markerIn(issue.body, markerName) === key);
       return hit ? { url: hit.html_url, number: hit.number } : null;
     },
 

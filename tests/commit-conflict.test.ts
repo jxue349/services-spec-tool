@@ -38,7 +38,7 @@ function makeClient(options: FakeOptions = {}) {
     listSpecFiles: vi.fn(async () => []),
     requestReviewers: vi.fn(async () => ({ requested: [], refused: [] })),
     updatePullRequestBody: vi.fn(async () => undefined),
-    findOpenGapIssue: vi.fn(async () => null),
+    findOpenIssueByMarker: vi.fn(async () => null),
     createIssue: vi.fn(async () => ({ url: 'https://github.com/o/r/issues/9', number: 9 })),
   };
 

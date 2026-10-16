@@ -44,9 +44,13 @@ export function retrieveAcrossTeams(
   question: string,
   budget: number = CONTEXT_BUDGET,
 ): FederatedContext {
+  // Every team's code, so a question quoting `ENT-007` reaches `SVC-ENT-007`
+  // wherever it lives, and never reaches another team's `HW-ENT-007`.
+  const codes = specs.map((spec) => spec.code);
+
   const withMatches = specs.map((spec) => {
     const blocks = parseRuleBlocks(spec.content);
-    return { spec, considered: blocks.length, ranked: rankBlocks(blocks, question) };
+    return { spec, considered: blocks.length, ranked: rankBlocks(blocks, question, codes) };
   });
 
   const contributing = withMatches.filter((t) => t.ranked.length > 0);
