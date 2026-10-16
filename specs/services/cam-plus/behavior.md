@@ -7,10 +7,10 @@ knowledge base.
 
 | Rule | Statement | Status |
 | --- | --- | --- |
-| PROAI-001 | A device-level upsell prompt for Pro AI is shown at most once per billing period per device. | Proposed |
-| PROAI-002 | **Pro AI is $5.99/month/device**, monthly only. | Proposed |
-| PROAI-003 | A user who declines the Pro AI upsell three times is not prompted again for 90 days. | Proposed |
-| PROAI-004 | Pro AI is a per-device add-on available to T1 and T2 parent plans. | Proposed |
+| SVC-PROAI-001 | A device-level upsell prompt for Pro AI is shown at most once per billing period per device. | Proposed |
+| SVC-PROAI-002 | **Pro AI is $5.99/month/device**, monthly only. | Proposed |
+| SVC-PROAI-003 | A user who declines the Pro AI upsell three times is not prompted again for 90 days. | Proposed |
+| SVC-PROAI-004 | Pro AI is a per-device add-on available to T1 and T2 parent plans. | Proposed |
 
 ## Prototype coverage
 
