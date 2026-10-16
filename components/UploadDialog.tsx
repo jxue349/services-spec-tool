@@ -167,7 +167,7 @@ export function UploadDialog({
 
                 {ruleShaped === false ? (
                   <div className="rounded-md border border-secondary/50 bg-secondary/10 px-3 py-2 text-[11px] leading-relaxed text-ink">
-                    This file does not look rule-shaped — the compilers and Parent Check expect numbered rules like{' '}
+                    This file does not look rule-shaped — the other tabs expect numbered rules like{' '}
                     <span className="font-mono">ADDON-001</span>. It will upload as-is, but distil it into rules before
                     expecting much from the other tabs.
                   </div>

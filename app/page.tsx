@@ -23,17 +23,50 @@ import type {
   TestMatrix,
 } from '@/lib/schemas';
 
+/**
+ * Every tab carries a one-line description, shown under the tab bar.
+ *
+ * Six tabs named in the project's own vocabulary ("Parent Check", "State
+ * Machine") tell a support agent or a PM from another team nothing about what
+ * they do, and the only way to find out was to click each one and see what
+ * happened. The description is always on screen, so knowing where you are
+ * costs nothing.
+ */
 const TABS = [
   // Ask leads: it is the surface support and customers of this tool use, and
   // the only one that does not require knowing how the spec is organised.
-  { id: 'ask', label: 'Ask' },
-  // Parent Check sits second: after asking, the next thing a spec author does
-  // is see how their spec lands against the knowledge base.
-  { id: 'parent', label: 'Parent Check' },
-  { id: 'explorer', label: 'Behavior Explorer' },
-  { id: 'tests', label: 'QA Test Matrix' },
-  { id: 'states', label: 'State Machine' },
-  { id: 'consistency', label: 'Consistency Check' },
+  {
+    id: 'ask',
+    label: 'Ask',
+    blurb: 'Ask a question in plain English. The answer cites the rules it came from, and says so when the rules do not cover it.',
+  },
+  // Second: after asking, the next thing a spec author does is see how their
+  // spec lands against the knowledge base.
+  {
+    id: 'parent',
+    label: 'Compare',
+    blurb: 'Compare the selected spec against your team’s knowledge base (the parent spec): what is new, what duplicates, what contradicts.',
+  },
+  {
+    id: 'explorer',
+    label: 'Behavior Explorer',
+    blurb: 'Describe a customer’s account and devices, and see what the rules say they are actually entitled to.',
+  },
+  {
+    id: 'tests',
+    label: 'QA Test Matrix',
+    blurb: 'Turn the rules into test cases, prioritised, each citing the rule it covers.',
+  },
+  {
+    id: 'states',
+    label: 'State Machine',
+    blurb: 'Draw the subscription lifecycle the rules describe — the states, and what moves a customer between them.',
+  },
+  {
+    id: 'consistency',
+    label: 'Consistency Check',
+    blurb: 'Go rule by rule and check which ones the prototype demonstrates and which ones QA covers.',
+  },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -229,8 +262,8 @@ export default function Page() {
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-sm font-semibold tracking-wide text-white">AI Spec Explorer</h1>
         <p className="text-[11px] text-inkDim">
-          The spec in Git is the source of truth. It compiles into four views — edit a rule, recompile, and the views
-          move with it.
+          Each team&rsquo;s product rules, kept in Git. Ask questions about them on the right, edit them on the left —
+          every answer cites the rules behind it.
         </p>
         <span className="ml-auto">
           <AuthBar onUserChange={setSignedInUser} />
@@ -286,6 +319,11 @@ export default function Page() {
               </button>
             ))}
           </nav>
+
+          {/* What the tab you are on actually does, before you click anything. */}
+          <p className="shrink-0 border-b border-line px-3 py-1.5 text-[11px] leading-relaxed text-inkDim">
+            {TABS.find((t) => t.id === tab)?.blurb}
+          </p>
 
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto p-3">
             {dirty ? (

@@ -52,7 +52,7 @@ export async function POST(req: Request): Promise<NextResponse> {
         '',
         body.note?.trim() ? `${body.note.trim()}\n` : '',
         'Review the behavior, not just the prose — everything downstream compiles',
-        'from this file, and Parent Check will compare it against the knowledge base',
+        'from this file, and the Compare tab will check it against the knowledge base',
         'once it lands.',
         '',
         '🤖 Uploaded via AI Spec Explorer',

@@ -76,7 +76,10 @@ export function isSpecPath(candidate: string, root: string): boolean {
  * label. A file with no directory of its own falls back to its stem.
  */
 export function specLabel(path: string, root: string, parentPath: string): string {
-  if (path === parentPath) return 'Parent spec (knowledge base)';
+  // "All rules", not "Parent spec": the option already sits under a
+  // "Knowledge base" group, and "parent" is internal vocabulary that told a
+  // reader nothing about what the document contains.
+  if (path === parentPath) return 'All rules';
 
   const rootSegments = root.split('/').filter((s) => s !== '');
   const segments = path.split('/').slice(rootSegments.length).filter((s) => s !== '');

@@ -89,8 +89,9 @@ describe('isSpecPath', () => {
 });
 
 describe('specLabel', () => {
-  it('names the parent spec explicitly', () => {
-    expect(specLabel('spec/parent.md', ROOT, 'spec/parent.md')).toBe('Parent spec (knowledge base)');
+  it('names the knowledge base in plain words, not as "parent"', () => {
+    // "Parent" is internal vocabulary; the selector shows this to users.
+    expect(specLabel('spec/parent.md', ROOT, 'spec/parent.md')).toBe('All rules');
   });
 
   it('uses the directory for a child spec', () => {
@@ -117,8 +118,8 @@ describe('specLabel with team folders', () => {
     expect(specLabel('specs/app-experience/plugin-page/behavior.md', ROOT_T, PARENT)).toBe('plugin-page');
   });
 
-  it('still names the parent spec', () => {
-    expect(specLabel(PARENT, ROOT_T, PARENT)).toBe('Parent spec (knowledge base)');
+  it('still names the knowledge base', () => {
+    expect(specLabel(PARENT, ROOT_T, PARENT)).toBe('All rules');
   });
 
   it('falls back to the stem for a file with no directory of its own', () => {

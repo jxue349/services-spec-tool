@@ -25,13 +25,44 @@ import type {
  * a caveat rather than confident delivery.
  */
 
+/**
+ * Rule status, as the knowledge base records it.
+ *
+ * `meaning` is shown in a legend under the citations: the whole governance
+ * model of this tool is "you may assert a confirmed rule and must caveat
+ * anything weaker", and that is worth nothing if a reader cannot tell what
+ * the words mean.
+ */
 const STATUS = {
-  confirmed: { label: 'confirmed', className: 'border-accent/50 text-accent' },
-  unverified: { label: 'unverified', className: 'border-warning/60 text-warning' },
-  open: { label: 'open', className: 'border-warning/60 text-warning' },
-  superseded: { label: 'superseded', className: 'border-line text-inkDim line-through' },
-  unknown: { label: 'no status', className: 'border-line text-inkDim' },
+  confirmed: {
+    label: 'confirmed',
+    className: 'border-accent/50 text-accent',
+    meaning: 'agreed and safe to tell a customer',
+  },
+  unverified: {
+    label: 'unverified',
+    className: 'border-warning/60 text-warning',
+    meaning: 'written down but not yet agreed — check before asserting',
+  },
+  open: {
+    label: 'open',
+    className: 'border-warning/60 text-warning',
+    meaning: 'a known question nobody has decided yet',
+  },
+  superseded: {
+    label: 'superseded',
+    className: 'border-line text-inkDim line-through',
+    meaning: 'replaced by a newer rule; never answer from it',
+  },
+  unknown: {
+    label: 'no status',
+    className: 'border-line text-inkDim',
+    meaning: 'the spec does not say how settled this is',
+  },
 } as const;
+
+/** The statuses worth explaining; "no status" explains itself. */
+const LEGEND = ['confirmed', 'unverified', 'open', 'superseded'] as const;
 
 const CONFIDENCE = {
   high: { label: 'Answered from the spec', className: 'border-accent/50 bg-accent/10 text-accent' },
@@ -82,14 +113,17 @@ export function AskTab({
   const federating = scope === 'teams' && canFederate;
   const askingParent = scope === 'parent' && !spec.isParent;
 
-  const scopeLabel = federating
-    ? `All ${teams.length} knowledge bases`
-    : askingParent || spec.isParent
-      ? 'Parent spec (knowledge base)'
-      : spec.specPath;
-
   // The team that owns the spec on screen — the reporter's own team.
   const currentTeam = teams.find((t) => t.parentPath === spec.specPath || t.specPaths.includes(spec.specPath));
+
+  // Names the team rather than saying "parent spec": "asking Services
+  // knowledge base" tells you what was searched; "asking Parent spec" does
+  // not. Also travels to the server as provenance and into any gap issue.
+  const scopeLabel = federating
+    ? `All ${teams.length} team knowledge bases`
+    : askingParent || spec.isParent
+      ? `${currentTeam?.name ?? 'This team'} knowledge base`
+      : spec.specPath;
 
   /**
    * Maps the team label the model wrote back to a real team.
@@ -452,6 +486,24 @@ export function AskTab({
                   </li>
                 ))}
               </ul>
+
+              {/*
+                What the status words mean. The tool's whole governance model
+                is "assert a confirmed rule, caveat anything weaker", which is
+                worth nothing if the reader cannot tell the difference.
+              */}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 py-2">
+                {LEGEND.filter((status) => result.citations.some((c) => c.status === status)).map((status) => (
+                  <span key={status} className="flex items-center gap-1.5">
+                    <span
+                      className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] ${STATUS[status].className}`}
+                    >
+                      {STATUS[status].label}
+                    </span>
+                    <span className="text-[10px] text-inkDim">{STATUS[status].meaning}</span>
+                  </span>
+                ))}
+              </div>
             </Panel>
           ) : null}
 
@@ -655,9 +707,7 @@ export function AskTab({
           ) : null}
         </>
       ) : busy ? null : (
-        <EmptyState>
-          Ask a question and the spec answers it — with the rules it relied on, and their status.
-        </EmptyState>
+        <EmptyState>Nothing asked yet. Try one of the examples above.</EmptyState>
       )}
     </div>
   );

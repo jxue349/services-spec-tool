@@ -46,8 +46,8 @@ export function ParentCheckTab({
   if (spec.isParent) {
     return (
       <EmptyState>
-        This <em>is</em> the parent knowledge base. Select a child spec to check it against the parent and request a
-        change.
+        You are looking at the knowledge base itself, so there is nothing to compare it against. Pick an individual
+        spec from the selector on the left to check it against this team&rsquo;s rules.
       </EmptyState>
     );
   }

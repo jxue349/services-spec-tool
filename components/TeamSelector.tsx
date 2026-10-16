@@ -33,7 +33,7 @@ export function TeamSelector({
             className="font-mono text-[10px] text-inkDim"
             title="Prefix for this team's rule IDs"
           >
-            {current.code}-… · {current.specPaths.length} spec
+            IDs: {current.code}-… · {current.specPaths.length} spec
             {current.specPaths.length === 1 ? '' : 's'}
           </span>
         ) : null}

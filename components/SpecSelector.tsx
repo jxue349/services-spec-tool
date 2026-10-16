@@ -30,7 +30,7 @@ export function SpecSelector({
 
   return (
     <label className="block space-y-1">
-      <SectionLabel>Spec</SectionLabel>
+      <SectionLabel>Viewing</SectionLabel>
       <select
         value={value}
         disabled={disabled}
@@ -43,7 +43,7 @@ export function SpecSelector({
           </optgroup>
         ) : null}
         {children.length > 0 ? (
-          <optgroup label={`Specs (${children.length})`}>
+          <optgroup label={`Individual specs (${children.length})`}>
             {children.map((spec) => (
               <option key={spec.path} value={spec.path}>
                 {spec.label}
