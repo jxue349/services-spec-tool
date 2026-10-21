@@ -5,14 +5,14 @@ from deploy import validate_service_secret
 
 class SecretPreflightTests(unittest.TestCase):
     def setUp(self):
-        self.values = dict.fromkeys(['GITHUB_TOKEN', 'OIDC_CLIENT_SECRET', 'GLEAN_ACT_AS', 'GLEAN_API_KEY', 'GLEAN_CLIENT_ID', 'GLEAN_CLIENT_SECRET'], '')
+        self.values = dict.fromkeys(['GITHUB_TOKEN', 'OIDC_CLIENT_SECRET', 'GLEAN_ACT_AS', 'GLEAN_TOKEN', 'GLEAN_CLIENT_ID', 'GLEAN_CLIENT_SECRET'], '')
         self.values['SESSION_SECRET'] = 'test-only-' * 8
 
     def test_empty_integrations_only_allowed_for_explicit_test_mode(self):
         validate_service_secret(self.values, 'test-readonly', 'auto')
         with self.assertRaises(RuntimeError):
             validate_service_secret(self.values, 'oidc', 'auto')
-        del self.values['GLEAN_API_KEY']
+        del self.values['GLEAN_TOKEN']
         with self.assertRaises(RuntimeError):
             validate_service_secret(self.values, 'test-readonly', 'auto')
 
@@ -24,7 +24,7 @@ class SecretPreflightTests(unittest.TestCase):
             validate_service_secret(self.values, 'off', 'auto')
 
     def test_one_complete_glean_credential_type(self):
-        self.values.update(GITHUB_TOKEN='test-only', OIDC_CLIENT_SECRET='test-only', GLEAN_API_KEY='test-only')
+        self.values.update(GITHUB_TOKEN='test-only', OIDC_CLIENT_SECRET='test-only', GLEAN_TOKEN='test-only')
         validate_service_secret(self.values, 'oidc', 'auto')
         self.values['GLEAN_CLIENT_ID'] = 'test-only'
         with self.assertRaises(RuntimeError):
@@ -32,7 +32,7 @@ class SecretPreflightTests(unittest.TestCase):
         self.values['GLEAN_CLIENT_SECRET'] = 'test-only'
         with self.assertRaises(RuntimeError):
             validate_service_secret(self.values, 'test-readonly', 'auto')
-        self.values['GLEAN_API_KEY'] = ''
+        self.values['GLEAN_TOKEN'] = ''
         validate_service_secret(self.values, 'oidc', 'auto')
 
 

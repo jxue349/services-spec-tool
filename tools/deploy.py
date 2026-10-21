@@ -21,13 +21,13 @@ def validate_service_secret(values, auth_mode, glean_mode):
     if glean_mode != 'token':
         keys += ['GLEAN_CLIENT_ID', 'GLEAN_CLIENT_SECRET']
     if glean_mode != 'oauth':
-        keys += ['GLEAN_API_KEY']
+        keys += ['GLEAN_TOKEN']
     missing = [key for key in keys if not isinstance(values.get(key), str)]
     if missing:
         raise RuntimeError('Runtime secret is missing string fields: ' + ', '.join(missing))
     if len(values['SESSION_SECRET'].strip()) < 32:
         raise RuntimeError('Runtime session secret is too short')
-    has_token = glean_mode != 'oauth' and bool(values['GLEAN_API_KEY'].strip())
+    has_token = glean_mode != 'oauth' and bool(values['GLEAN_TOKEN'].strip())
     has_id = glean_mode != 'token' and bool(values['GLEAN_CLIENT_ID'].strip())
     has_secret = glean_mode != 'token' and bool(values['GLEAN_CLIENT_SECRET'].strip())
     if has_id != has_secret:
@@ -130,7 +130,7 @@ def main():
         return
 
     supplied = json.loads(args.parameters.read_text()) if args.parameters else {}
-    forbidden = {'GITHUB_TOKEN', 'SESSION_SECRET', 'OIDC_CLIENT_SECRET', 'GLEAN_API_KEY', 'GLEAN_CLIENT_SECRET'}
+    forbidden = {'GITHUB_TOKEN', 'SESSION_SECRET', 'OIDC_CLIENT_SECRET', 'GLEAN_TOKEN', 'GLEAN_API_KEY', 'GLEAN_CLIENT_SECRET'}
     if forbidden.intersection(supplied):
         raise RuntimeError('Secret values do not belong in CloudFormation parameters')
     if args.stack == 'service':

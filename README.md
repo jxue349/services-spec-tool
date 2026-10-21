@@ -563,6 +563,8 @@ tests/            unit + mocked-integration tests
   credentials are added. The UI identifies this mode and missing credentials.
   See the [deployment runbook](docs/deployment-runbook.md#temporary-testing-without-sso)
   for secret provisioning, task restart, and restoring SSO.
+  In AWS Secrets Manager, store the Glean token under `GLEAN_TOKEN`; ECS maps
+  that field to the application's `GLEAN_API_KEY` environment variable.
 
 ---
 

@@ -65,11 +65,13 @@ Populate `/internal-specs/prod/runtime` as one JSON secret. Required keys:
 - `OIDC_CLIENT_SECRET`: the dedicated JumpCloud application's secret.
 - `SESSION_SECRET`: at least 32 random bytes, encoded for an environment variable.
 - OAuth mode: `GLEAN_CLIENT_ID` and `GLEAN_CLIENT_SECRET`.
-- Token mode instead: `GLEAN_API_KEY`.
+- Token mode instead: `GLEAN_TOKEN`. ECS injects this secret field into the
+  application's existing `GLEAN_API_KEY` environment variable.
 - `GLEAN_ACT_AS`: leave empty unless a global Glean token requires a service-user email.
 
-All seven fields now exist; `SESSION_SECRET` was generated securely and the other
-fields were initialized as empty strings. Preserve the generated session key.
+All seven required fields exist; `SESSION_SECRET` was generated securely, and
+the owner supplied `GITHUB_TOKEN` and `GLEAN_TOKEN`. Preserve the session key.
+The older empty `GLEAN_API_KEY` secret field is unused by the current template.
 In the default `GleanCredentialMode=auto`, ECS injects both Glean credential
 options, and the application requires exactly one populated option. Fill either
 the OAuth pair or the API token, leaving the other fields empty. Empty fields

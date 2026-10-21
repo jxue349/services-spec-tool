@@ -190,7 +190,7 @@ Resources:
             - !If
               - IncludeGleanToken
               - Name: GLEAN_API_KEY
-                ValueFrom: !Sub '${RuntimeSecretArn}:GLEAN_API_KEY::'
+                ValueFrom: !Sub '${RuntimeSecretArn}:GLEAN_TOKEN::'
               - !Ref AWS::NoValue
           LogConfiguration:
             LogDriver: awslogs
