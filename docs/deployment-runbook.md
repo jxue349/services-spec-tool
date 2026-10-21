@@ -7,12 +7,17 @@ Account `012619468172`, region `us-west-2`, hostname
 ## Automatic releases from main
 
 The [Checks workflow](../.github/workflows/checks.yml) validates pull requests and
-pushes to `main`. After the workflow is merged, every successful `main` push also
-runs **Deploy main to ECS**. Pull requests and other branches never deploy.
+pushes to `main`. Every successful `main` push also runs **Deploy main to ECS**.
+Pull requests and other branches never deploy. The protected branch requires a
+PR, up-to-date checks, and resolved conversations, with zero required reviewer
+approvals and no bypass actors. See the [development workflow](development-workflow.md)
+for contributor commands and the administrative policy files.
 
 1. Application checks must pass: lint, typecheck, Vitest, production build/smoke,
    and the production dependency audit. Infrastructure checks validate all three
-   CloudFormation templates and run the deployment-tool tests.
+   CloudFormation templates, lint the workflow, and run deployment-tool tests.
+   The required **PR gate** explicitly fails unless both jobs succeed; the
+   deployment job depends on that gate.
 2. GitHub OIDC assumes `arn:aws:iam::012619468172:role/internal-specs-github-deploy`.
    No AWS access keys or application credentials are stored in GitHub.
 3. Build `linux/amd64` from the checked commit and push to the `internal-specs`
@@ -60,6 +65,11 @@ foundation, IAM roles, DNS, or networking. Registration/inspection APIs that lac
 resource-level scoping have the minimum required wildcard permissions.
 CloudFormation's existing-subnet parameter validation has read-only
 `ec2:DescribeSubnets` permission restricted to `us-west-2`.
+Task-definition cleanup also requires `Resource: '*'` because
+[`ecs:DeregisterTaskDefinition` has no resource-level scope](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html).
+That grant requires `aws:RequestedRegion=us-west-2` and
+`aws:CalledViaLast=cloudformation.amazonaws.com`; direct deregistration by the
+CI role is denied. CloudFormation management remains limited to this service stack.
 
 Provision or update this role using the administrator profile:
 
@@ -69,9 +79,9 @@ python3 tools/deploy.py apply ci --change-set <reviewed-change-set-arn>
 python3 tools/deploy.py status ci
 ```
 
-This bootstrap is separate from application releases. The first actual GitHub
-OIDC authentication and automatic image rollout can be confirmed only after the
-workflow reaches `main`.
+This bootstrap is separate from application releases. PR #1 merged the workflow
+into `main`; verify each automatic rollout in its GitHub Actions run and release
+summary rather than inferring deployment from the merge.
 
 ## Prepare an operator release
 

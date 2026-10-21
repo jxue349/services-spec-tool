@@ -50,7 +50,7 @@ remain validation-only. Infrastructure changes retain the operator plan/apply pa
 | Persistence | GitHub files, history, PRs, and issues; signed session cookies | Existing architecture |
 | Initial capacity | Two tasks, each 0.5 vCPU and 1 GiB RAM | Starting size to validate |
 | Infrastructure | CloudFormation, separate foundation and service templates | Approved baseline |
-| Automatic application releases | Checked `main` pushes publish ECR images and update the service stack; dedicated CI access stack | Requested by user; activation awaits workflow merge |
+| Automatic application releases | Checked `main` pushes publish ECR images and update the service stack; dedicated CI access stack | Active after PR #1 merged; PR-only main rules enforced |
 
 A different
 spec repository or compiler remains possible through configuration. Per-team
@@ -379,7 +379,7 @@ network resources, the certificate, and the cluster throughout rollback.
 | 0 Plan review | Complete | User approval on 2026-10-21 |
 | 1 Confirm inputs | Complete with tracked dependencies | Account/network/cluster/certificate/quota and GitHub/DNS rules verified; credential and notification dependencies recorded above; cost baseline in runbook |
 | 2 Application preparation | Complete | 394 tests, lint, typecheck, verification build, standalone and AMD64 container smoke pass |
-| 3 Infrastructure and tooling | Operator tooling complete; main-branch release workflow prepared | [Application PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); dedicated CI role provisioned and validated; automatic releases await workflow merge; scanner dispositions recorded in the runbook |
+| 3 Infrastructure and tooling | Operator tooling and main-branch release workflow active | [Application PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1) merged; dedicated CI role provisioned and validated; required PR gates and repository policy documented in the development workflow |
 | 4 Foundation and image | Complete for test deployment | Test-mode image `247140b` published and scanned: zero ECR OS findings; encrypted runtime secret initialized |
 | 5 Service infrastructure checks | Test service verified | UPDATE_COMPLETE after Glean secret mapping; two healthy targets across two AZs; private task networking, HTTPS 200, writes/OIDC 403, and non-allowlisted network denial verified |
 | 6 DNS PR and application | Complete | [DNS PR #49](https://github.com/wyzelabs-inc/wyze-dns-config/pull/49) merged at 20:14 UTC on 2026-10-21; final hostname resolves to the ALB and HTTPS works |
@@ -537,9 +537,36 @@ Ask/state-generation checks pass; OIDC and authenticated write acceptance remain
   The new read-only release verifier passes against the current two healthy tasks.
   A real image-only CloudFormation plan passed the automated change guard and was
   deleted without execution; no production image change was made during this check.
-- The first GitHub OIDC login, automated ECR push, and ECS rollout remain to be
-  observed after PR #1 reaches `main`. See the runbook for bootstrap, release
-  behavior, failure recovery, and operator rollback.
+- PR #1 merged at `2026-10-21T21:21:15Z`. The first automatic
+  [main release](https://github.com/wyzelabs-inc/KB-Spec-explorer/actions/runs/39678094223)
+  authenticated through OIDC and published its commit-tagged image to ECR.
+  Confirm final rollout status from that run and its release summary.
+- The first rollout reached two healthy tasks on `internal-specs:3`, then exposed
+  an IAM denial during cleanup of the previous task definition. Corrected the
+  CI policy: `ecs:DeregisterTaskDefinition` requires a wildcard resource, limited
+  to Oregon and calls through CloudFormation. Direct deregistration remains
+  denied; tagging stays restricted to the `internal-specs` task family.
+
+### CI/CD hardening amendment
+
+The user requested PR-only changes, mandatory checks without another person's
+approval, and an explicit local-development-to-deployment workflow on 2026-10-21.
+
+- Repository ruleset `25593491` protects `main`, including administrators, with
+  no bypass actors. Require a PR, current branch, resolved review threads,
+  `application`, `infrastructure`, and `PR gate`; all approval requirements are
+  disabled. Force pushes and deletion are blocked; merges use squash.
+- Repository settings require full action SHAs, default Actions tokens to read
+  access, prevent Actions approving PRs, and delete merged topic branches.
+  Administrative JSON files record the settings separately from workflow code.
+- The hardening workflow adds explicit job limits, cancellation of obsolete PR
+  checks, actionlint, and an aggregate gate that fails on skipped/failed jobs.
+  Production remains serialized and requires a successful gate.
+- `AGENTS.md`, `CLAUDE.md`, a PR template, and the
+  [development workflow](development-workflow.md) describe local checks, PR
+  merge, deployment verification, and rollback. Weekly dependency update PRs
+  use the same required checks. Workflow/docs changes become active after their
+  hardening PR merges; repository settings are already enforced.
 
 ## References
 

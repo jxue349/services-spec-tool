@@ -26,7 +26,7 @@ the editor, including uncommitted edits.
 
 ```bash
 cp .env.example .env    # then fill in the values
-npm install
+npm ci
 DEV_AUTH_BYPASS=true npm run dev  # local development only, http://localhost:3000
 ```
 
@@ -568,7 +568,11 @@ tests/            unit + mocked-integration tests
 
 ### Deployment from main
 
-After the CI changes are merged, pushes to `main` run the application and
+Changes reach protected `main` through a PR with passing checks; no reviewer
+approval is required. Follow the [development workflow](docs/development-workflow.md)
+for local validation, squash merge, and release verification.
+
+Pushes to `main` run the application and
 infrastructure checks, build an AMD64 image, push it to ECR, and update ECS through
 CloudFormation. Deployment uses GitHub OIDC, immutable image digests, an ECR scan
 gate, and task/ALB health verification. Pull requests run checks only.

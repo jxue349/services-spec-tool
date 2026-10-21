@@ -81,10 +81,19 @@ Resources:
                 Condition:
                   StringEquals:
                     aws:RequestedRegion: !Ref AWS::Region
-              - Sid: ManageServiceTaskDefinitions
+              - Sid: CleanupTaskDefinitionsThroughCloudFormation
+                Effect: Allow
+                # DeregisterTaskDefinition lacks resource-level permissions.
+                # Restrict the wildcard grant to CloudFormation calls in this region.
+                Action: ecs:DeregisterTaskDefinition
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
+                    aws:CalledViaLast: cloudformation.amazonaws.com
+              - Sid: ManageServiceTaskDefinitionTags
                 Effect: Allow
                 Action:
-                  - ecs:DeregisterTaskDefinition
                   - ecs:TagResource
                   - ecs:UntagResource
                   - ecs:ListTagsForResource
