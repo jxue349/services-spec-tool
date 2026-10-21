@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
@@ -41,10 +42,10 @@ const GAP_LIMIT_PER_MIN = 10;
  * Per-process and short-lived, like the rate limiter: a best-effort guard, not
  * distributed coordination. The API check below remains the real dedupe.
  */
-export async function POST(req: Request): Promise<NextResponse> {
+async function handlePOST(req: Request): Promise<NextResponse> {
   const requestId = newRequestId();
 
-  const limit = checkRateLimit(`gap:${clientKey(req.headers)}`, GAP_LIMIT_PER_MIN);
+  const limit = checkRateLimit(`gap:${clientKey()}`, GAP_LIMIT_PER_MIN);
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Too many flags. Retry in ${limit.retryAfterSeconds}s.`, requestId },
@@ -189,3 +190,5 @@ function renderGapBody(input: {
   lines.push('🤖 Logged by [AI Spec Explorer](https://claude.com/claude-code)');
   return lines.join('\n');
 }
+
+export const POST = withApiAccess(handlePOST);

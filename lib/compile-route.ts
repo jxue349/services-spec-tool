@@ -20,7 +20,7 @@ export async function runCompileRoute<TReq, TRes>(
 ): Promise<NextResponse> {
   const requestId = newRequestId();
 
-  const limit = checkRateLimit(`compile:${clientKey(req.headers)}`, COMPILE_LIMIT_PER_MIN);
+  const limit = checkRateLimit(`compile:${clientKey()}`, COMPILE_LIMIT_PER_MIN);
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Too many compiles. Retry in ${limit.retryAfterSeconds}s.`, requestId },

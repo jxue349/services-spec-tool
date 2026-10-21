@@ -1,3 +1,4 @@
+import { requestSignal } from './request-context';
 import { Octokit } from '@octokit/rest';
 import type { SpecEnv } from './env';
 import { markerIn } from './issue-marker';
@@ -233,7 +234,7 @@ function toHistoryEntry(commit: {
 }
 
 export function createSpecRepoClient(env: SpecEnv): SpecRepoClient {
-  const octokit = new Octokit({ auth: env.githubToken, request: { timeout: 30_000 } });
+  const octokit = new Octokit({ auth: env.githubToken, request: { timeout: 30_000, signal: requestSignal() } });
   const { owner, repo } = env;
 
   return {

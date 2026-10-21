@@ -1,3 +1,4 @@
+import { throwIfRequestAborted } from './request-context';
 import type { ZodType } from 'zod';
 import { getCompilerProvider } from './env';
 import { SchemaValidationError, parseAndValidate } from './json';
@@ -49,6 +50,7 @@ export function activeProvider(): CompilerProvider {
  * output, so a malformed first reply is a normal event rather than a fault.
  */
 export async function compile<T>(prompt: string, schema: ZodType<T>): Promise<T> {
+  throwIfRequestAborted();
   const provider = activeProvider();
 
   const first = await provider.complete(JSON_ONLY_SYSTEM, prompt);
@@ -69,6 +71,7 @@ export async function compile<T>(prompt: string, schema: ZodType<T>): Promise<T>
       'shape exactly. No prose, no code fences.',
     ].join('\n');
 
+    throwIfRequestAborted();
     return parseAndValidate(await provider.complete(JSON_ONLY_SYSTEM, retryPrompt), schema);
   }
 }

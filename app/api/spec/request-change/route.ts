@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
@@ -24,7 +25,7 @@ export const dynamic = 'force-dynamic';
  * ALLOW_DIRECT_COMMIT says — the knowledge base is the one document that
  * always gets reviewed.
  */
-export async function POST(req: Request): Promise<NextResponse> {
+async function handlePOST(req: Request): Promise<NextResponse> {
   const requestId = newRequestId();
   try {
     const body = await readJson(req, RequestChangeSchema);
@@ -238,3 +239,5 @@ function renderPrBody(input: {
 function inline(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ').trim();
 }
+
+export const POST = withApiAccess(handlePOST);

@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
@@ -19,7 +20,7 @@ export const dynamic = 'force-dynamic';
  * commits require both ALLOW_DIRECT_COMMIT=true and an explicit `direct: true`
  * from a UI that has already shown a confirmation step.
  */
-export async function POST(req: Request): Promise<NextResponse> {
+async function handlePOST(req: Request): Promise<NextResponse> {
   const requestId = newRequestId();
   try {
     const body = await readJson(req, CommitRequestSchema);
@@ -53,3 +54,5 @@ export async function POST(req: Request): Promise<NextResponse> {
     return apiErrorFromUnknown('POST /api/spec/commit', err, requestId);
   }
 }
+
+export const POST = withApiAccess(handlePOST);

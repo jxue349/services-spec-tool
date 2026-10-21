@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiErrorFromUnknown, newRequestId } from '@/lib/errors';
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic';
  * Every spec in the repo, for the selector: the parent / knowledge base plus
  * each child spec found under the spec root.
  */
-export async function GET(): Promise<NextResponse> {
+async function handleGET(): Promise<NextResponse> {
   const requestId = newRequestId();
   try {
     const env = getSpecEnv();
@@ -42,3 +43,5 @@ export async function GET(): Promise<NextResponse> {
     return apiErrorFromUnknown('GET /api/spec/list', err, requestId);
   }
 }
+
+export const GET = withApiAccess(handleGET);

@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import type { NextResponse } from 'next/server';
 import { compile } from '@/lib/compiler';
 import { runCompileRoute } from '@/lib/compile-route';
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /** Behavior Explorer: scenario entitlement resolution, or a free-form what-if. */
-export function POST(req: Request): Promise<NextResponse> {
+function handlePOST(req: Request): Promise<NextResponse> {
   return runCompileRoute('POST /api/compile/explorer', req, ExplorerRequestSchema, async (body) => {
     if ('scenario' in body) {
       const result = await compile(explorerScenarioPrompt(body.spec, body.scenario), ExplorerScenarioResultSchema);
@@ -23,3 +24,5 @@ export function POST(req: Request): Promise<NextResponse> {
     return { kind: 'whatIf' as const, result };
   });
 }
+
+export const POST = withApiAccess(handlePOST);

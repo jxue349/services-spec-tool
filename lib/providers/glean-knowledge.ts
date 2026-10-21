@@ -1,3 +1,4 @@
+import { requestSignal } from '../request-context';
 import { getCompilerEnv } from '../env';
 import { COMPILE_TIMEOUT_MS } from './types';
 import { GleanError, extractAnswer, gleanHeaders } from './glean';
@@ -54,14 +55,14 @@ export function extractSources(body: unknown): { title: string; url: string }[] 
  * here must never take down an answer the specification already gave.
  */
 export async function askCompanyKnowledge(question: string): Promise<CompanyKnowledge | null> {
-  const env = getCompilerEnv();
-  if (!env.companyKnowledge) return null;
+  if (process.env.GLEAN_COMPANY_KNOWLEDGE?.trim().toLowerCase() !== 'true') return null;
 
   try {
+    const env = getCompilerEnv();
     const res = await fetch(`${env.baseUrl}/rest/api/v1/chat`, {
       method: 'POST',
       headers: await gleanHeaders(env),
-      signal: AbortSignal.timeout(COMPILE_TIMEOUT_MS),
+      signal: requestSignal(COMPILE_TIMEOUT_MS),
       body: JSON.stringify({
         saveChat: false,
         // DEFAULT, not GPT: this call is *supposed* to retrieve.

@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import * as client from 'openid-client';
 import { cookies } from 'next/headers';
@@ -15,7 +16,7 @@ export const dynamic = 'force-dynamic';
  * an error page: the user cannot act on a stack trace, and the detail belongs
  * in the server log with a request id.
  */
-export async function GET(req: Request): Promise<NextResponse> {
+async function handleGET(req: Request): Promise<NextResponse> {
   const requestId = newRequestId();
   const base = process.env.APP_BASE_URL?.trim() || 'http://localhost:3000';
   const fail = (reason: string) => NextResponse.redirect(new URL(`/?auth_error=${reason}`, base));
@@ -30,7 +31,11 @@ export async function GET(req: Request): Promise<NextResponse> {
 
     // openid-client validates state, nonce, issuer, audience, signature and
     // expiry here; a mismatch throws rather than returning claims.
-    const tokens = await client.authorizationCodeGrant(config, new URL(req.url), {
+    // TLS terminates at the ALB. Use the registered external origin, never
+    // the task's HTTP origin or caller-controlled forwarding headers.
+    const callbackUrl = new URL('/api/auth/callback', base);
+    callbackUrl.search = new URL(req.url).search;
+    const tokens = await client.authorizationCodeGrant(config, callbackUrl, {
       pkceCodeVerifier: parsed.codeVerifier,
       expectedState: parsed.state,
       expectedNonce: parsed.nonce,
@@ -57,3 +62,5 @@ export async function GET(req: Request): Promise<NextResponse> {
     return fail('failed');
   }
 }
+
+export const GET = withApiAccess(handleGET, { public: true });

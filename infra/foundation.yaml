@@ -1,0 +1,359 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Internal Specs foundation in the existing shared VPC
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-07faa997b84444780
+  PublicSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: subnet-0a51f4bb0e2f2638d,subnet-0986aff5d00b4a2a8
+  CertificateArn:
+    Type: String
+    Description: Existing ACM certificate
+    Default: arn:aws:acm:us-west-2:012619468172:certificate/e61b355c-c98b-4783-ba8d-272d30ae84b9
+  OwnerEmail:
+    Type: String
+    Description: Individual service owner
+    Default: cxu@wyze.com
+  Hostname:
+    Type: String
+    Description: Service hostname
+    Default: internal-specs.wyze.com
+  AllowedCidr1:
+    Type: String
+    Description: Approved company VPN or office egress
+    Default: 44.231.159.184/32
+    AllowedPattern: ^(?:\d{1,3}\.){3}\d{1,3}/32$
+  AllowedCidr2:
+    Type: String
+    Description: Approved company VPN or office egress
+    Default: 54.189.112.236/32
+    AllowedPattern: ^(?:\d{1,3}\.){3}\d{1,3}/32$
+  AllowedCidr3:
+    Type: String
+    Description: Approved company VPN or office egress
+    Default: 54.70.14.31/32
+    AllowedPattern: ^(?:\d{1,3}\.){3}\d{1,3}/32$
+  AllowedCidr4:
+    Type: String
+    Description: Approved company VPN or office egress
+    Default: 44.227.197.192/32
+    AllowedPattern: ^(?:\d{1,3}\.){3}\d{1,3}/32$
+  AllowedCidr5:
+    Type: String
+    Description: Approved company VPN or office egress
+    Default: 54.203.76.26/32
+    AllowedPattern: ^(?:\d{1,3}\.){3}\d{1,3}/32$
+  AllowedCidr6:
+    Type: String
+    Description: Approved company VPN or office egress
+    Default: 4.53.144.62/32
+    AllowedPattern: ^(?:\d{1,3}\.){3}\d{1,3}/32$
+Resources:
+  Repository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: internal-specs
+      ImageTagMutability: IMMUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+  RuntimeSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: /internal-specs/prod/runtime
+      Description: Populate securely before deploying the service; JSON keys are documented in the runbook.
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/internal-specs
+      RetentionInDays: 30
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Internal Specs HTTPS from approved company egress
+      VpcId:
+        Ref: VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp:
+            Ref: AllowedCidr1
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp:
+            Ref: AllowedCidr2
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp:
+            Ref: AllowedCidr3
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp:
+            Ref: AllowedCidr4
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp:
+            Ref: AllowedCidr5
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp:
+            Ref: AllowedCidr6
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          DestinationSecurityGroupId:
+            Ref: TaskSecurityGroup
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Internal Specs tasks accept only their ALB
+      VpcId:
+        Ref: VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: internal-specs
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Subnets:
+        Ref: PublicSubnets
+      SecurityGroups:
+        - Ref: AlbSecurityGroup
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '180'
+        - Key: routing.http.drop_invalid_header_fields.enabled
+          Value: 'true'
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: internal-specs
+      VpcId:
+        Ref: VpcId
+      TargetType: ip
+      Protocol: HTTP
+      Port: 3000
+      HealthCheckPath: /api/healthz
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '120'
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn:
+        Ref: LoadBalancer
+      Protocol: HTTPS
+      Port: 443
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn:
+            Ref: CertificateArn
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+            ContentType: text/plain
+            MessageBody: Not found
+  HostRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn:
+        Ref: HttpsListener
+      Priority: 10
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - Ref: Hostname
+      Actions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: TargetGroup
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InternalSpecsExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource:
+                  Fn::GetAtt:
+                    - Repository
+                    - Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  Fn::GetAtt:
+                    - LogGroup
+                    - Arn
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  Ref: RuntimeSecret
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+  TaskIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId:
+        Ref: TaskSecurityGroup
+      IpProtocol: tcp
+      FromPort: 3000
+      ToPort: 3000
+      SourceSecurityGroupId:
+        Ref: AlbSecurityGroup
+Outputs:
+  RepositoryUri:
+    Value:
+      Fn::GetAtt:
+        - Repository
+        - RepositoryUri
+  RuntimeSecretArn:
+    Value:
+      Ref: RuntimeSecret
+  ExecutionRoleArn:
+    Value:
+      Fn::GetAtt:
+        - ExecutionRole
+        - Arn
+  TaskRoleArn:
+    Value:
+      Fn::GetAtt:
+        - TaskRole
+        - Arn
+  TaskSecurityGroupId:
+    Value:
+      Ref: TaskSecurityGroup
+  TargetGroupArn:
+    Value:
+      Ref: TargetGroup
+  TargetGroupFullName:
+    Value:
+      Fn::GetAtt:
+        - TargetGroup
+        - TargetGroupFullName
+  AlbArn:
+    Value:
+      Ref: LoadBalancer
+  AlbFullName:
+    Value:
+      Fn::GetAtt:
+        - LoadBalancer
+        - LoadBalancerFullName
+  AlbDnsName:
+    Value:
+      Fn::GetAtt:
+        - LoadBalancer
+        - DNSName
+  LogGroupName:
+    Value:
+      Ref: LogGroup
