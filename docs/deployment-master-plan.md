@@ -1,6 +1,6 @@
 # Internal Specs AWS Deployment Master Plan
 
-Status: **Preparing the user-authorized read-only test deployment without SSO**
+Status: **Read-only test service running without SSO; DNS PR #49 and provider credentials pending**
 
 Prepared: **2026-10-21**
 
@@ -371,11 +371,11 @@ network resources, the certificate, and the cluster throughout rollback.
 | 0 Plan review | Complete | User approval on 2026-10-21 |
 | 1 Confirm inputs | Complete with tracked dependencies | Account/network/cluster/certificate/quota and GitHub/DNS rules verified; credential and notification dependencies recorded above; cost baseline in runbook |
 | 2 Application preparation | Complete | 394 tests, lint, typecheck, verification build, standalone and AMD64 container smoke pass |
-| 3 Infrastructure and tooling | Complete; advisory review tracked | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); CI checks pass on the deployed foundation commit; scanner dispositions are recorded in the runbook |
-| 4 Foundation and image | Foundation complete; test-mode image in preparation | Stack is UPDATE_COMPLETE and IN_SYNC; runtime secret initialized with generated session key and empty provider fields |
-| 5 Service infrastructure checks | Preparing read-only test deployment | SSO temporarily disabled by user; provider credentials may be added after startup |
-| 6 DNS PR and application | Waiting for healthy service | Hostname remains NXDOMAIN; DNS PR has not been opened |
-| 7 Integrations and release | Waiting for service, DNS, and sandbox inputs | Live authentication, provider calls, sandbox writes, off-network denial, replacement, rollback, and observation remain pending |
+| 3 Infrastructure and tooling | Complete; advisory review tracked | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); CI checks pass on release `247140b`; scanner dispositions are recorded in the runbook |
+| 4 Foundation and image | Complete for test deployment | Test-mode image `247140b` published and scanned: zero ECR OS findings; encrypted runtime secret initialized |
+| 5 Service infrastructure checks | Test service verified | CREATE_COMPLETE; two healthy targets in private subnets across two AZs; HTTPS 200; writes/OIDC 403; non-allowlisted network probe blocked |
+| 6 DNS PR and application | PR opened; review/apply pending | [DNS PR #49](https://github.com/wyzelabs-inc/wyze-dns-config/pull/49); one CNAME addition, TTL 300, proxy disabled; required code-owner review and dns-production approval remain |
+| 7 Integrations and release | Waiting for credentials, DNS, and sandbox inputs | User will populate GitHub/Glean fields; JumpCloud deferred for test mode. Real provider calls, authenticated sandbox writes, replacement/rollback, and observation remain pending |
 
 Approval record: **Approved by the user on 2026-10-21: “looks good, let get start.”** Update each phase with its commit/PR, relevant AWS
 outputs, test results, and remaining dependencies as execution progresses.
@@ -426,20 +426,21 @@ outputs, test results, and remaining dependencies as execution progresses.
 | Runtime secret | `/internal-specs/prod/runtime`; ARN suffix `runtime-eddM1Z`; generated session key; other credential fields empty pending user input |
 | Application logs | `/ecs/internal-specs`, 30-day retention, service KMS key |
 | ALB access logs | `internal-specs-alb-logs-012619468172-us-west-2`, 30-day expiry; log-delivery test file verified |
-| Release commit | `88f65ac8e748177e2b4220054fa1d3a1b9fad91e` |
-| Candidate image | `012619468172.dkr.ecr.us-west-2.amazonaws.com/internal-specs@sha256:c727a39040d083e8384643f84e15c2ebcca7172539915631e7728f967c089519` |
+| Deployed application commit | `247140b91812fa42ce183e149e98c77d3c80557d` |
+| Candidate image | `012619468172.dkr.ecr.us-west-2.amazonaws.com/internal-specs@sha256:8e7368c2f0b3e68d92d4f3822ebc483a064c1e8fc157fe4aaec356f5335928cf` |
 | Candidate scan | COMPLETE, zero ECR basic OS findings; production npm audit separately retains two low findings |
 
 AWS checks verified the exact six allowed ingress CIDRs, HTTPS-only listener,
 ALB-to-task security-group isolation, KMS encryption/rotation, log delivery,
 and scoped secret access. IAM simulation permits the execution role to read
-this service's secret and denies an unrelated secret. Actual task secret
-retrieval and outbound provider connections await the service launch.
+this service's secret and denies an unrelated secret. Both running tasks have now retrieved the configured secret fields successfully.
+Actual GitHub/Glean calls await provider credentials and a task restart.
 
 A client connection override preserving `internal-specs.wyze.com` validates TLS
-and reaches the ALB. The service host returns 503 with no targets; an unexpected
-Host header returns 404. This is foundation evidence, not a passing application
-health check. Public DNS still returns NXDOMAIN.
+and reaches the ALB. The service now returns 200 for the workspace, health, and auth-status endpoints.
+All six repository mutation APIs and OIDC login/callback return 403; an incorrect
+POST origin returns 403 and an unexpected Host header returns 404. Public DNS
+remains unpublished pending PR #49 and the repository approval workflow.
 
 Provisioning recovered from two AWS validation failures: a reserved ALB name and
 an overly restrictive log-delivery policy. The five retained service resources
@@ -448,11 +449,33 @@ final policy uses AWS's account/region delivery scope and its service-principal
 exception for redacted network context. The stack now has no drift; no shared
 network, cluster, certificate, or existing application resources were changed.
 
-The release image was built and tested from `88f65ac`; subsequent documentation
-commits record deployment evidence and do not change that image. Application,
-infrastructure, CodeQL, secret scanning, and Lacework SCA checks pass for that
-commit. Wiz's advisory result and the remaining infrastructure scanner review
-are visible in PR #1. No real GitHub/Glean/OIDC integration success is claimed.
+The deployed image was built and tested from `247140b`; subsequent documentation
+commits record evidence and do not change that image. Application, infrastructure,
+CodeQL, secret-scanning, and both Lacework checks pass for that commit. Wiz
+advisory findings remain visible in PR #1. No real GitHub/Glean/OIDC
+integration success is claimed.
+
+### Read-only test deployment evidence
+
+- Service stack `internal-specs-service`: `CREATE_COMPLETE`, seven additions,
+  change set `review-1792613181`. No shared resources changed.
+- Task definition `internal-specs:1`, desired/running count 2, rollout completed.
+  Both tasks and ALB targets are healthy in `us-west-2a` and `us-west-2b`; neither
+  task ENI has a public IP, and both use only the service task security group.
+- Runtime flags: `AUTH_MODE=test-readonly`, `DEV_AUTH_BYPASS=false`,
+  `ALLOW_DIRECT_COMMIT=false`, `GleanCredentialMode=auto`.
+- Runtime auth status confirms no authenticated identity and no configured
+  GitHub/Glean credentials loaded yet. Keys are edited in Secrets Manager; ECS
+  must replace tasks after a secret update. See the runbook command.
+- A one-off Fargate probe used NAT egress outside all six allowed source CIDRs.
+  DNS and a control HTTPS request to AWS STS succeeded; ALB connection timed out.
+  The probe exited successfully and its task is STOPPED. This verifies denial
+  from that non-allowlisted network without changing VPN or security-group rules.
+- DNS PR #49 CI preview passes and shows exactly one correction: create
+  `internal-specs.wyze.com`, TTL 300, `proxy=false`, with the approved ALB target
+  and individual owner comment. No other records change. Existing TTL warnings
+  remain unrelated to this addition. Code-owner review and the production
+  environment approval are still required; no DNS apply has been performed.
 
 ## References
 
