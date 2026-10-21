@@ -1,6 +1,6 @@
 # Internal Specs AWS Deployment Master Plan
 
-Status: **Foundation and image ready; service launch awaits runtime credentials**
+Status: **Preparing the user-authorized read-only test deployment without SSO**
 
 Prepared: **2026-10-21**
 
@@ -8,7 +8,7 @@ Service URL: **https://internal-specs.wyze.com**
 
 Deploy AI Spec Explorer as a company-internal service in AWS account
 `012619468172`, using the existing shared VPC and ECS cluster. Access requires
-both an approved company network and JumpCloud sign-in. GitHub stores the
+an approved company network and, for normal operation, JumpCloud sign-in. GitHub stores the
 specifications; Glean supplies the initial model integration. No database is
 required.
 
@@ -17,6 +17,16 @@ results. Routine implementation and deployment steps within the approved scope
 can proceed without repeated permission requests. Existing repository reviews,
 DNS production approvals, unavailable credentials, and material scope changes
 remain separate dependencies.
+
+**Testing amendment, approved 2026-10-21:** the user requested secret fields to
+fill in and temporary SSO disablement. Deploy `AuthMode=test-readonly` behind
+the unchanged VPN/office allowlist. Block all repository mutations and OIDC
+login/callback routes; permit spec reads and model calls once credentials are
+configured. The app may start with empty integration fields, explicitly showing
+setup status. The runtime secret now contains a generated session key and empty
+GitHub, Glean, and future OIDC fields. This amendment permits the test service
+and DNS PR to proceed before JumpCloud setup; full-release criteria below still
+apply when returning to `AuthMode=oidc`.
 
 ## Approved decisions
 
@@ -27,7 +37,7 @@ remain separate dependencies.
 | DNS delivery | PR in `wyzelabs-inc/wyze-dns-config` | User selected |
 | Region and runtime | `us-west-2`, ECS Fargate in `wyze-internal` | Approved baseline |
 | Network access | Internet-facing ALB restricted to company VPN and office egress IPs; private tasks | Approved baseline matching existing services |
-| Authentication | Application-managed JumpCloud OIDC | Approved baseline |
+| Authentication | JumpCloud OIDC by default; temporary VPN-only read-only test mode | User authorized temporary SSO disablement |
 | Contributor access | Assigned JumpCloud users can read and propose changes across all registered teams | Approved by user |
 | Spec repository | `wyzelabs-inc/KB-Spec-explorer`, `specs/`, branch `main` | Approved baseline |
 | Compiler | Glean; company-knowledge second opinion disabled initially | Approved baseline |
@@ -180,7 +190,7 @@ while resolving these dependencies, but do not launch with placeholder values.
 | --- | --- |
 | Individual service owner and Wyze email for DNS ownership | Default to current operator `cxu@wyze.com`; parameterized |
 | Current approved VPN/office egress CIDRs | Verified six US VPN/office `/32` rules against the existing roadmap ALB; recorded in `infra/foundation.yaml`. Overseas access remains outside the initial baseline. |
-| JumpCloud application, permitted assignees, issuer, and credentials | Secure location requested from user; required before service launch |
+| JumpCloud application, permitted assignees, issuer, and credentials | Required before enabling normal authenticated operation; deferred for the authorized read-only test phase |
 | GitHub service token and confirmation of repository access | Secure location requested from user; required before service launch. Operator GitHub CLI access works and is not the runtime credential. |
 | Glean credential and successful spec-only agent call | Secure location requested from user; required before service launch and tenant validation |
 | Approved sandbox repository and separately scoped test credentials | Requested from user; required before write-path acceptance |
@@ -360,10 +370,10 @@ network resources, the certificate, and the cluster throughout rollback.
 | --- | --- | --- |
 | 0 Plan review | Complete | User approval on 2026-10-21 |
 | 1 Confirm inputs | Complete with tracked dependencies | Account/network/cluster/certificate/quota and GitHub/DNS rules verified; credential and notification dependencies recorded above; cost baseline in runbook |
-| 2 Application preparation | Complete | 383 tests, lint, typecheck, verification build, standalone and AMD64 container smoke pass |
+| 2 Application preparation | Complete | 394 tests, lint, typecheck, verification build, standalone and AMD64 container smoke pass |
 | 3 Infrastructure and tooling | Complete; advisory review tracked | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); CI checks pass on the deployed foundation commit; scanner dispositions are recorded in the runbook |
-| 4 Foundation and image | Foundation/image complete; credentials pending | Stack is UPDATE_COMPLETE and IN_SYNC; patched image published with zero ECR OS findings; runtime secret has no value versions |
-| 5 Service infrastructure checks | Waiting for runtime credentials | No ECS service/tasks created; preliminary ALB TLS and host-routing probes pass |
+| 4 Foundation and image | Foundation complete; test-mode image in preparation | Stack is UPDATE_COMPLETE and IN_SYNC; runtime secret initialized with generated session key and empty provider fields |
+| 5 Service infrastructure checks | Preparing read-only test deployment | SSO temporarily disabled by user; provider credentials may be added after startup |
 | 6 DNS PR and application | Waiting for healthy service | Hostname remains NXDOMAIN; DNS PR has not been opened |
 | 7 Integrations and release | Waiting for service, DNS, and sandbox inputs | Live authentication, provider calls, sandbox writes, off-network denial, replacement, rollback, and observation remain pending |
 
@@ -372,7 +382,13 @@ outputs, test results, and remaining dependencies as execution progresses.
 
 ### Validation evidence, 2026-10-21
 
-- `npm run lint`, `npm run typecheck`, and `npm test`: pass, 383 tests in 21 files.
+- Temporary test mode passes 39 access-boundary tests, 3 deployment-secret tests,
+  and production standalone smoke checks. Missing provider keys permit the
+  workspace to load; all six mutation routes and OIDC login/callback return 403.
+  Normal OIDC startup and anonymous-denial tests still pass.
+  [Test-mode screenshot](deployment-test-readonly.png) shows the SSO/credential banner.
+
+- `npm run lint`, `npm run typecheck`, and `npm test`: pass, 394 tests in 21 files.
 - `npm run build:verify`: passes without runtime credentials using Next.js 15.5.28.
 - `python3 tools/smoke-production.py --dist .next-verify`: incomplete production
   settings and production auth bypass terminate startup; configured test server
@@ -407,7 +423,7 @@ outputs, test results, and remaining dependencies as execution progresses.
 | Drift check | `IN_SYNC`, zero drifted resources |
 | ALB resource name | `wyze-internal-specs` (AWS reserves the `internal-` name prefix) |
 | ALB DNS target | `wyze-internal-specs-1589150793.us-west-2.elb.amazonaws.com` |
-| Runtime secret | `/internal-specs/prod/runtime`; ARN suffix `runtime-eddM1Z`; empty pending secure credential provisioning |
+| Runtime secret | `/internal-specs/prod/runtime`; ARN suffix `runtime-eddM1Z`; generated session key; other credential fields empty pending user input |
 | Application logs | `/ecs/internal-specs`, 30-day retention, service KMS key |
 | ALB access logs | `internal-specs-alb-logs-012619468172-us-west-2`, 30-day expiry; log-delivery test file verified |
 | Release commit | `88f65ac8e748177e2b4220054fa1d3a1b9fad91e` |

@@ -46,6 +46,16 @@ export function AuthBar({ onUserChange }: { onUserChange: (user: MeResponse['use
 
   if (me === null) return authError ? <span className="text-sm text-warning">{authError}</span> : null;
 
+  if (me.authMode === 'test-readonly') {
+    const missing = [!me.integrations?.github && 'GitHub', !me.integrations?.compiler && 'Glean'].filter(Boolean);
+    return (
+      <span className="rounded border border-warning/50 bg-warning/10 px-2 py-1 text-xs text-warning">
+        SSO disabled for testing · Repository changes disabled
+        {missing.length > 0 ? ` · Awaiting ${missing.join(' and ')} credentials` : ''}
+      </span>
+    );
+  }
+
   if (!me.authConfigured) {
     return (
       <span

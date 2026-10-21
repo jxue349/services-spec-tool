@@ -28,4 +28,4 @@ async function handlePOST(req: Request): Promise<NextResponse> {
   }
 }
 
-export const POST = withApiAccess(handlePOST);
+export const POST = withApiAccess(handlePOST, { readOnly: true });

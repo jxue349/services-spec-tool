@@ -1,4 +1,4 @@
-import { requireApplicationUser } from './access';
+import { AccessError, requireApplicationUser, testReadOnlyMode } from './access';
 import { requestUser } from '../request-context';
 
 export class NotSignedInError extends Error {
@@ -15,6 +15,7 @@ export type WriteIdentity = {
 
 /** The route guard validates identity before any read, model call, or mutation. */
 export async function requireWriteIdentity(): Promise<WriteIdentity> {
+  if (testReadOnlyMode()) throw new AccessError(403, 'Repository changes are disabled during read-only testing.');
   const identity = requestUser();
   const user = identity === undefined ? await requireApplicationUser() : identity;
   if (user === null) return { email: null }; // Explicit local-development bypass only.

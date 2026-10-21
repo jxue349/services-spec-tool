@@ -21,10 +21,11 @@ python3 tools/deploy.py validate
 uvx cfn-lint infra/foundation.yaml infra/service.yaml
 ```
 
-Production credentials are not required to build the image. Production startup
+Production credentials are not required to build the image. Normal OIDC startup
 does require them. The initial application configuration uses Glean, spec-only
 answers, JumpCloud, and the repository's `specs/` directory. Development can
 explicitly bypass authentication with `DEV_AUTH_BYPASS=true`; production cannot.
+The separately authorized temporary mode is described below.
 
 ## Foundation
 
@@ -65,13 +66,20 @@ Populate `/internal-specs/prod/runtime` as one JSON secret. Required keys:
 - `SESSION_SECRET`: at least 32 random bytes, encoded for an environment variable.
 - OAuth mode: `GLEAN_CLIENT_ID` and `GLEAN_CLIENT_SECRET`.
 - Token mode instead: `GLEAN_API_KEY`.
+- `GLEAN_ACT_AS`: leave empty unless a global Glean token requires a service-user email.
+
+All seven fields now exist; `SESSION_SECRET` was generated securely and the other
+fields were initialized as empty strings. Preserve the generated session key.
+In the default `GleanCredentialMode=auto`, ECS injects both Glean credential
+options, and the application requires exactly one populated option. Fill either
+the OAuth pair or the API token, leaving the other fields empty. Empty fields
+are intentional placeholders, never dummy credentials sent to providers.
 
 Use the secure provisioning interface or an existing private file with mode
 `0600`. A CLI update can reference the file with `--secret-string file://...`;
 never put secret values directly into command arguments, Git, logs, or chat.
 Do not deploy using a personal GitHub CLI OAuth token as the service credential.
-Global Glean tokens requiring `GLEAN_ACT_AS` need that setting added to the task
-configuration before use; OAuth or a suitable user-scoped token is the baseline.
+The task reads `GLEAN_ACT_AS` from this same secret when required.
 
 Create the JumpCloud application with callback
 `https://internal-specs.wyze.com/api/auth/callback`, approved assignees, and
@@ -81,6 +89,36 @@ can read and propose PRs across all teams; there is no per-team user-role model.
 ECS reads secrets when tasks start. Rotate credentials in Secrets Manager and
 replace tasks to load the new version. Session-secret rotation signs everyone
 out; use a coordinated replacement when retiring a compromised signing key.
+
+## Temporary testing without SSO
+
+The user authorized disabling SSO temporarily on 2026-10-21. Deploy with
+`AuthMode=test-readonly` and `GleanCredentialMode=auto`. Omit the OIDC issuer and
+client ID for this phase. The existing VPN/office source allowlist remains the
+network boundary. There is no authenticated user identity in this mode, even
+if a browser still has an old session cookie.
+
+The workspace, spec reads, Ask, and compile calls are available once their
+provider credentials are filled in. All repository mutations, including PRs,
+issues, uploads and initialization, return 403 before parsing request bodies.
+New protected routes are denied in this mode unless explicitly marked read-only.
+Same-origin checks still apply to POST requests; callers share a per-task rate
+limit. Missing integration credentials do not prevent startup, and the UI
+shows which integrations await configuration. Health 200 only proves the web
+server is running, not that GitHub or Glean works.
+
+After securely updating the runtime secret, replace tasks to load the new values:
+
+```bash
+aws ecs update-service --cluster wyze-internal --service internal-specs \
+  --force-new-deployment --profile 012619468172_AWSAdministratorAccess \
+  --region us-west-2 --query 'service.{name:serviceName,desired:desiredCount}'
+```
+
+To end the test phase, populate `OIDC_CLIENT_SECRET`, supply the issuer/client ID,
+set `AuthMode=oidc`, and plan/apply the service update. Confirm anonymous requests
+return 401 and validate JumpCloud sign-in before accepting authenticated writes.
+The deployment tool refuses normal OIDC mode while required secrets are empty.
 
 ## Publish the image
 
@@ -114,9 +152,10 @@ Prepare a non-secret parameter file outside the repository:
 ```json
 {
   "ImageUri": "012619468172.dkr.ecr.us-west-2.amazonaws.com/internal-specs@sha256:<verified-digest>",
+  "AuthMode": "oidc",
   "OidcIssuer": "https://<actual-jumpcloud-issuer>",
   "OidcClientId": "<actual-client-id>",
-  "GleanCredentialMode": "oauth",
+  "GleanCredentialMode": "auto",
   "DesiredCount": 2
 }
 ```

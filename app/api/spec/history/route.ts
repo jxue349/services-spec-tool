@@ -41,4 +41,4 @@ async function handleGET(req: Request): Promise<NextResponse> {
   }
 }
 
-export const GET = withApiAccess(handleGET);
+export const GET = withApiAccess(handleGET, { readOnly: true });

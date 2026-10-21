@@ -217,4 +217,4 @@ async function askAcrossTeams(draft: string, question: string, draftPath?: strin
   };
 }
 
-export const POST = withApiAccess(handlePOST);
+export const POST = withApiAccess(handlePOST, { readOnly: true });

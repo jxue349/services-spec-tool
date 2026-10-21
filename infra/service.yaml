@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Internal Specs service; foundation and populated secrets are prerequisites
+Description: Internal Specs service; OIDC by default with an explicit read-only test mode
 Parameters:
   ClusterName:
     Type: String
@@ -33,19 +33,26 @@ Parameters:
   AlbFullName:
     Type: String
     Description: Foundation stack output
+  AuthMode:
+    Type: String
+    Description: Temporarily select test-readonly to test behind the VPN without SSO or repository writes
+    Default: oidc
+    AllowedValues: [oidc, test-readonly]
   OidcIssuer:
     Type: String
     Description: JumpCloud OIDC issuer
-    AllowedPattern: https://.+
+    Default: ''
+    AllowedPattern: ^$|https://.+
   OidcClientId:
     Type: String
     Description: JumpCloud application client ID
-    MinLength: 1
+    Default: ''
   GleanCredentialMode:
     Type: String
-    Description: Exactly one Glean credential type
-    Default: oauth
+    Description: Auto accepts exactly one populated credential type from the runtime secret
+    Default: auto
     AllowedValues:
+      - auto
       - oauth
       - token
   GitHubOwner:
@@ -65,11 +72,17 @@ Parameters:
     Type: String
     Description: Optional existing SNS topic; configure its policy to accept EventBridge
     Default: ''
+Rules:
+  RequireOidcConfiguration:
+    RuleCondition: !Equals [!Ref AuthMode, oidc]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref OidcIssuer, '']]
+        AssertDescription: OidcIssuer is required when AuthMode is oidc
+      - Assert: !Not [!Equals [!Ref OidcClientId, '']]
+        AssertDescription: OidcClientId is required when AuthMode is oidc
 Conditions:
-  UseGleanOAuth:
-    Fn::Equals:
-      - Ref: GleanCredentialMode
-      - oauth
+  IncludeGleanOAuth: !Not [!Equals [!Ref GleanCredentialMode, token]]
+  IncludeGleanToken: !Not [!Equals [!Ref GleanCredentialMode, oauth]]
   HasAlarmTopic:
     Fn::Not:
       - Fn::Equals:
@@ -117,6 +130,8 @@ Resources:
               Value: https://internal-specs.wyze.com
             - Name: DEV_AUTH_BYPASS
               Value: 'false'
+            - Name: AUTH_MODE
+              Value: !Ref AuthMode
             - Name: OIDC_ALLOWED_EMAIL_DOMAINS
               Value: wyze.com
             - Name: OIDC_ISSUER
@@ -154,35 +169,29 @@ Resources:
             - Name: GIT_AUTHOR_EMAIL
               Value: spec-explorer@wyze.com
           Secrets:
-            Fn::If:
-              - UseGleanOAuth
-              - - Name: GITHUB_TOKEN
-                  ValueFrom:
-                    Fn::Sub: '${RuntimeSecretArn}:GITHUB_TOKEN::'
-                - Name: OIDC_CLIENT_SECRET
-                  ValueFrom:
-                    Fn::Sub: '${RuntimeSecretArn}:OIDC_CLIENT_SECRET::'
-                - Name: SESSION_SECRET
-                  ValueFrom:
-                    Fn::Sub: '${RuntimeSecretArn}:SESSION_SECRET::'
-                - Name: GLEAN_CLIENT_ID
-                  ValueFrom:
-                    Fn::Sub: '${RuntimeSecretArn}:GLEAN_CLIENT_ID::'
-                - Name: GLEAN_CLIENT_SECRET
-                  ValueFrom:
-                    Fn::Sub: '${RuntimeSecretArn}:GLEAN_CLIENT_SECRET::'
-              - - Name: GITHUB_TOKEN
-                  ValueFrom:
-                    Fn::Sub: '${RuntimeSecretArn}:GITHUB_TOKEN::'
-                - Name: OIDC_CLIENT_SECRET
-                  ValueFrom:
-                    Fn::Sub: '${RuntimeSecretArn}:OIDC_CLIENT_SECRET::'
-                - Name: SESSION_SECRET
-                  ValueFrom:
-                    Fn::Sub: '${RuntimeSecretArn}:SESSION_SECRET::'
-                - Name: GLEAN_API_KEY
-                  ValueFrom:
-                    Fn::Sub: '${RuntimeSecretArn}:GLEAN_API_KEY::'
+            - Name: GITHUB_TOKEN
+              ValueFrom: !Sub '${RuntimeSecretArn}:GITHUB_TOKEN::'
+            - Name: OIDC_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:OIDC_CLIENT_SECRET::'
+            - Name: SESSION_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:SESSION_SECRET::'
+            - Name: GLEAN_ACT_AS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GLEAN_ACT_AS::'
+            - !If
+              - IncludeGleanOAuth
+              - Name: GLEAN_CLIENT_ID
+                ValueFrom: !Sub '${RuntimeSecretArn}:GLEAN_CLIENT_ID::'
+              - !Ref AWS::NoValue
+            - !If
+              - IncludeGleanOAuth
+              - Name: GLEAN_CLIENT_SECRET
+                ValueFrom: !Sub '${RuntimeSecretArn}:GLEAN_CLIENT_SECRET::'
+              - !Ref AWS::NoValue
+            - !If
+              - IncludeGleanToken
+              - Name: GLEAN_API_KEY
+                ValueFrom: !Sub '${RuntimeSecretArn}:GLEAN_API_KEY::'
+              - !Ref AWS::NoValue
           LogConfiguration:
             LogDriver: awslogs
             Options:

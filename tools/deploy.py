@@ -14,6 +14,34 @@ REGION = 'us-west-2'
 PREFIX = 'internal-specs'
 
 
+def validate_service_secret(values, auth_mode, glean_mode):
+    if auth_mode not in ('oidc', 'test-readonly') or glean_mode not in ('auto', 'oauth', 'token'):
+        raise RuntimeError('Invalid authentication or Glean credential mode')
+    keys = ['GITHUB_TOKEN', 'OIDC_CLIENT_SECRET', 'SESSION_SECRET', 'GLEAN_ACT_AS']
+    if glean_mode != 'token':
+        keys += ['GLEAN_CLIENT_ID', 'GLEAN_CLIENT_SECRET']
+    if glean_mode != 'oauth':
+        keys += ['GLEAN_API_KEY']
+    missing = [key for key in keys if not isinstance(values.get(key), str)]
+    if missing:
+        raise RuntimeError('Runtime secret is missing string fields: ' + ', '.join(missing))
+    if len(values['SESSION_SECRET'].strip()) < 32:
+        raise RuntimeError('Runtime session secret is too short')
+    has_token = glean_mode != 'oauth' and bool(values['GLEAN_API_KEY'].strip())
+    has_id = glean_mode != 'token' and bool(values['GLEAN_CLIENT_ID'].strip())
+    has_secret = glean_mode != 'token' and bool(values['GLEAN_CLIENT_SECRET'].strip())
+    if has_id != has_secret:
+        raise RuntimeError('Set both GLEAN_CLIENT_ID and GLEAN_CLIENT_SECRET')
+    if has_token and has_id:
+        raise RuntimeError('Populate one Glean credential type, leaving the other empty')
+    if auth_mode == 'oidc':
+        missing = [key for key in ('GITHUB_TOKEN', 'OIDC_CLIENT_SECRET') if not values[key].strip()]
+        if missing:
+            raise RuntimeError('Runtime secret has empty fields: ' + ', '.join(missing))
+        if not (has_token or has_id):
+            raise RuntimeError('Populate Glean credentials before deploying with OIDC')
+
+
 def run(command, **kwargs):
     result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, **kwargs)
     if result.returncode:
@@ -109,7 +137,9 @@ def main():
         existing = outputs('foundation')
         for key in ('RuntimeSecretArn', 'ExecutionRoleArn', 'TaskRoleArn', 'TaskSecurityGroupId', 'TargetGroupArn', 'TargetGroupFullName', 'AlbFullName'):
             supplied[key] = existing[key]
-        for key in ('ImageUri', 'OidcIssuer', 'OidcClientId'):
+        auth_mode = supplied.get('AuthMode', 'oidc')
+        required_parameters = ['ImageUri'] + (['OidcIssuer', 'OidcClientId'] if auth_mode == 'oidc' else [])
+        for key in required_parameters:
             if not supplied.get(key):
                 raise RuntimeError(f'{key} is required')
         # Validate keys without printing, persisting, or passing values as CLI arguments.
@@ -118,13 +148,7 @@ def main():
             values = json.loads(payload.get('SecretString', '{}'))
         except (RuntimeError, ValueError):
             raise RuntimeError('Populate the runtime secret securely before planning the service') from None
-        required = ['GITHUB_TOKEN', 'OIDC_CLIENT_SECRET', 'SESSION_SECRET']
-        required += ['GLEAN_CLIENT_ID', 'GLEAN_CLIENT_SECRET'] if supplied.get('GleanCredentialMode', 'oauth') == 'oauth' else ['GLEAN_API_KEY']
-        missing = [key for key in required if not isinstance(values.get(key), str) or not values[key].strip()]
-        if missing:
-            raise RuntimeError('Runtime secret is missing keys: ' + ', '.join(missing))
-        if len(values['SESSION_SECRET']) < 32:
-            raise RuntimeError('Runtime session secret is too short')
+        validate_service_secret(values, auth_mode, supplied.get('GleanCredentialMode', 'auto'))
         del values, payload
 
     try:

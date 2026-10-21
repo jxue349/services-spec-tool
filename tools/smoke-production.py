@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check the built standalone server without real credentials or upstream calls."""
 import argparse
+import json
 import os
 from pathlib import Path
 import socket
@@ -36,7 +37,7 @@ def main():
             proc.kill()
             proc.communicate()
 
-    for invalid in ({}, {'DEV_AUTH_BYPASS': 'true'}):
+    for invalid in ({}, {'DEV_AUTH_BYPASS': 'true'}, {'AUTH_MODE': 'off'}):
         proc, _ = launch(invalid)
         try:
             output, _ = proc.communicate(timeout=10)
@@ -81,6 +82,38 @@ def main():
         with urllib.request.urlopen(base + '/', timeout=3) as response:
             assert 'Sign in with your company account' in response.read().decode()
         print('Health 200; sign-in screen visible; protected read/model/write APIs 401')
+    finally:
+        stop(proc)
+
+    proc, port = launch({'AUTH_MODE': 'test-readonly', 'APP_BASE_URL': 'https://internal-specs.wyze.com'})
+    base = f'http://127.0.0.1:{port}'
+    try:
+        for _ in range(80):
+            try:
+                with urllib.request.urlopen(base + '/api/healthz', timeout=1) as response:
+                    assert response.status == 200
+                break
+            except (urllib.error.URLError, TimeoutError):
+                if proc.poll() is not None:
+                    raise RuntimeError('Read-only test server exited')
+                time.sleep(0.1)
+        else:
+            raise RuntimeError('Test-mode health never became ready')
+        with urllib.request.urlopen(base + '/', timeout=3) as response:
+            body = response.read().decode()
+            assert 'AI Spec Explorer' in body and 'Sign in with your company account' not in body
+        with urllib.request.urlopen(base + '/api/auth/me', timeout=2) as response:
+            assert json.load(response) == {'authConfigured': False, 'authMode': 'test-readonly', 'integrations': {'github': False, 'compiler': False}, 'user': None}
+        for path, method, status in [('/api/spec/init', 'POST', 403), ('/api/auth/login', 'GET', 403), ('/api/teams', 'GET', 500)]:
+            try:
+                request = urllib.request.Request(base + path, method=method, headers={'Origin': 'https://internal-specs.wyze.com'})
+                urllib.request.urlopen(request, timeout=2)
+                raise RuntimeError(f'{path} unexpectedly succeeded')
+            except urllib.error.HTTPError as error:
+                assert error.code == status, (path, error.code)
+                if path == '/api/teams':
+                    assert 'GITHUB_TOKEN' in json.load(error)['error']
+        print('Test mode: workspace/health 200, no SSO, missing integrations reported, writes 403')
     finally:
         stop(proc)
 

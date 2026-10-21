@@ -4,6 +4,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { NextResponse } from 'next/server';
 import { withApiAccess } from '@/lib/api-access';
 import { assertAuthConfiguration } from '@/lib/auth/access';
+import { requireWriteIdentity } from '@/lib/auth/require-user';
 import { validateRuntimeConfiguration } from '@/lib/runtime-config';
 import { requestSignal, requestUser, withRequestDeadline } from '@/lib/request-context';
 import { clientKey } from '@/lib/ratelimit';
@@ -21,6 +22,7 @@ vi.mock('openid-client', async (importOriginal) => ({ ...await importOriginal<ty
 vi.mock('@/lib/auth/oidc', async (importOriginal) => ({ ...await importOriginal<typeof import('@/lib/auth/oidc')>(), oidcConfig: vi.fn(async () => ({})) }));
 
 beforeEach(() => {
+  vi.stubEnv('AUTH_MODE', 'oidc');
   vi.stubEnv('DEV_AUTH_BYPASS', 'false');
   vi.stubEnv('OIDC_ISSUER', 'https://identity.example.com');
   vi.stubEnv('OIDC_CLIENT_ID', 'test-client');
@@ -84,6 +86,71 @@ describe('API access boundary', () => {
     }));
     expect(grant.mock.calls.at(-1)?.[1].toString()).toBe(`${base}/api/auth/callback?code=example&state=state`);
     expect(response.headers.get('location')).toBe(`${base}/?auth_error=no_claims`);
+  });
+});
+
+describe('temporary read-only testing', () => {
+  beforeEach(() => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('AUTH_MODE', 'test-readonly');
+    for (const key of ['OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'GITHUB_TOKEN', 'GLEAN_API_KEY', 'GLEAN_CLIENT_ID', 'GLEAN_CLIENT_SECRET']) {
+      vi.stubEnv(key, '');
+    }
+    vi.stubEnv('ALLOW_DIRECT_COMMIT', 'false');
+    vi.stubEnv('COMPILER_PROVIDER', 'glean');
+    vi.stubEnv('GLEAN_INSTANCE', 'wyze');
+  });
+
+  it('starts without SSO or integration credentials and reports setup status without a user', async () => {
+    validateRuntimeConfiguration();
+    currentUser.mockResolvedValue({ sub: 'old-session', email: 'staff@wyze.com', name: 'Staff' });
+    const { GET } = await import('@/app/api/auth/me/route');
+    const response = await GET(new Request(`${base}/api/auth/me`));
+    expect(await response.json()).toEqual({ authConfigured: false, authMode: 'test-readonly', integrations: { github: false, compiler: false }, user: null });
+  });
+
+  it.each(['spec/upload', 'spec/commit', 'spec/init', 'spec/request-change', 'cross-team/report', 'gaps'])('blocks %s before parsing or external calls even with an old session', async (path) => {
+    currentUser.mockResolvedValue({ sub: 'old-session', email: 'staff@wyze.com', name: 'Staff' });
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { POST } = await import(/* @vite-ignore */ `../app/api/${path}/route.ts`);
+    const response = await POST(new Request(`${base}/api/${path}`, { method: 'POST', headers: { origin: base }, body: 'invalid JSON' }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining('read-only test mode') });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(requireWriteIdentity()).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('permits explicitly read-only model POSTs, keeps origin checks, and denies unclassified routes', async () => {
+    const handler = vi.fn(async () => NextResponse.json({ key: clientKey(), user: requestUser() }));
+    const route = withApiAccess(handler, { readOnly: true });
+    const req = new Request(`${base}/api/compile/tests`, { method: 'POST', headers: { origin: base } });
+    const response = await route(req);
+    expect(await response.json()).toEqual({ key: 'shared-readonly-test', user: null });
+    expect((await route(new Request(req.url, { method: 'POST' }))).status).toBe(403);
+    expect((await withApiAccess(handler)(new Request(base))).status).toBe(403);
+  });
+
+  it.each(['login', 'callback'])('disables OIDC %s without contacting the identity provider', async (path) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { GET } = await import(/* @vite-ignore */ `../app/api/auth/${path}/route.ts`);
+    expect((await GET(new Request(`${base}/api/auth/${path}`))).status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps HTTPS, direct-commit and development-bypass restrictions; rejects unknown auth modes', () => {
+    vi.stubEnv('APP_BASE_URL', 'http://internal-specs.wyze.com');
+    expect(validateRuntimeConfiguration).toThrow(/HTTPS/);
+    vi.stubEnv('APP_BASE_URL', base);
+    vi.stubEnv('ALLOW_DIRECT_COMMIT', 'true');
+    expect(validateRuntimeConfiguration).toThrow(/Direct commits/);
+    vi.stubEnv('ALLOW_DIRECT_COMMIT', 'false');
+    vi.stubEnv('DEV_AUTH_BYPASS', 'true');
+    expect(validateRuntimeConfiguration).toThrow(/cannot be enabled/);
+    vi.stubEnv('DEV_AUTH_BYPASS', 'false');
+    vi.stubEnv('AUTH_MODE', 'off');
+    expect(validateRuntimeConfiguration).toThrow(/AUTH_MODE/);
   });
 });
 

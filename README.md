@@ -555,9 +555,14 @@ tests/            unit + mocked-integration tests
   corrective retry when the reply fails schema validation.
 - **Sign-in and attribution.** With `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
   `OIDC_CLIENT_SECRET` and `SESSION_SECRET` set, every write requires a
-  signed-in user and is attributed to them. Production startup rejects missing authentication configuration. Spec reads,
+  signed-in user and is attributed to them. Normal production startup rejects missing authentication configuration. Spec reads,
   model calls, and writes require a signed-in user. Local development can
   explicitly opt out with `DEV_AUTH_BYPASS=true`; production rejects that setting.
+  The temporary `AUTH_MODE=test-readonly` setting permits VPN-only testing without
+  SSO, blocks every repository mutation, and allows startup before integration
+  credentials are added. The UI identifies this mode and missing credentials.
+  See the [deployment runbook](docs/deployment-runbook.md#temporary-testing-without-sso)
+  for secret provisioning, task restart, and restoring SSO.
 
 ---
 

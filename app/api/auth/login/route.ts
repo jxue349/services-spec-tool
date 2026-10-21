@@ -38,4 +38,4 @@ async function handleGET(): Promise<NextResponse> {
   }
 }
 
-export const GET = withApiAccess(handleGET, { public: true });
+export const GET = withApiAccess(handleGET, { public: true, oidcOnly: true });
