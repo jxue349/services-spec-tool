@@ -157,7 +157,7 @@ Resources:
               ArnLike:
                 aws:SourceArn:
                   Fn::Sub: >-
-                    arn:${AWS::Partition}:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/internal-specs/*
+                    arn:${AWS::Partition}:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/wyze-internal-specs/*
           - Sid: DenyInsecureTransport
             Effect: Deny
             Principal: '*'
@@ -303,7 +303,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     DependsOn: AccessLogBucketPolicy
     Properties:
-      Name: internal-specs
+      Name: wyze-internal-specs
       Type: application
       Scheme: internet-facing
       IpAddressType: ipv4
