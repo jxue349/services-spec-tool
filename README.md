@@ -566,6 +566,16 @@ tests/            unit + mocked-integration tests
   In AWS Secrets Manager, store the Glean token under `GLEAN_TOKEN`; ECS maps
   that field to the application's `GLEAN_API_KEY` environment variable.
 
+### Deployment from main
+
+After the CI changes are merged, pushes to `main` run the application and
+infrastructure checks, build an AMD64 image, push it to ECR, and update ECS through
+CloudFormation. Deployment uses GitHub OIDC, immutable image digests, an ECR scan
+gate, and task/ALB health verification. Pull requests run checks only.
+The release preserves the deployed authentication, secrets, network, and capacity
+settings. Infrastructure changes use the operator workflow separately.
+See [automatic releases and rollback](docs/deployment-runbook.md#automatic-releases-from-main).
+
 ---
 
 ## Tests

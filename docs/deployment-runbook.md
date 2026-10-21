@@ -4,7 +4,74 @@ Account `012619468172`, region `us-west-2`, hostname
 `https://internal-specs.wyze.com`. The approved scope and execution status are in
 [the master plan](deployment-master-plan.md).
 
-## Prepare a release
+## Automatic releases from main
+
+The [Checks workflow](../.github/workflows/checks.yml) validates pull requests and
+pushes to `main`. After the workflow is merged, every successful `main` push also
+runs **Deploy main to ECS**. Pull requests and other branches never deploy.
+
+1. Application checks must pass: lint, typecheck, Vitest, production build/smoke,
+   and the production dependency audit. Infrastructure checks validate all three
+   CloudFormation templates and run the deployment-tool tests.
+2. GitHub OIDC assumes `arn:aws:iam::012619468172:role/internal-specs-github-deploy`.
+   No AWS access keys or application credentials are stored in GitHub.
+3. Build `linux/amd64` from the checked commit and push to the `internal-specs`
+   ECR repository. The immutable tag is `<commit-sha>-<run-id>-<attempt>`; the
+   running service always references the resulting SHA-256 digest.
+4. Require a completed ECR scan with no high or critical findings. An incomplete
+   or failed scan stops deployment; the existing service continues running.
+5. Create and validate a CloudFormation change set using the **currently deployed
+   template**, replacing only `ImageUri`. Preserve every other stack parameter,
+   including `AuthMode`, OIDC settings, secret references, network IDs and capacity.
+6. Wait for CloudFormation and ECS completion, then verify the intended digest,
+   healthy tasks, AZ distribution, and healthy ALB targets. A circuit-breaker
+   rollback to an older image makes the workflow fail even if ECS becomes stable.
+
+Releases are serialized; an active deployment is not cancelled by a newer push.
+The job checks the current `main` SHA before building and again before applying,
+so a stale queued run cannot deploy over a newer release. A new push after
+execution starts waits for the active rollout to finish. Successful release
+summaries include the new/previous image, task definition, and change-set ARN.
+Re-running the current `main` workflow uses a new immutable image tag.
+
+GitHub-hosted runners are outside the service's VPN/office allowlist. CI verifies
+health through AWS APIs; browser and provider acceptance checks run from an
+approved network. The workflow does not broaden network access. Temporary
+`test-readonly` mode remains in effect until an operator explicitly changes it.
+
+Infrastructure/template changes and SSO setup still use the operator plan/apply
+procedure below. Merging a template change alone does not apply it to production.
+Pause automatic releases by disabling the Checks workflow or removing the
+deployment role's trust; retain the previous image digest for operator rollback.
+
+### Bootstrap CI access
+
+The [CI template](../infra/ci.yaml) creates one dedicated IAM role and references
+the account's existing GitHub OIDC provider. Its trust is restricted to this
+repository's immutable identity and `refs/heads/main`, as verified through
+`repos/wyzelabs-inc/KB-Spec-explorer/actions/oidc/customization/sub`.
+The workflow deliberately has no GitHub environment because that would change
+the OIDC subject; review trust conditions before adding one.
+
+The role can publish/scan this ECR repository, manage release change sets for
+`internal-specs-service`, update this ECS service, and pass only its existing
+task/execution roles. It cannot read Secrets Manager values or modify the
+foundation, IAM roles, DNS, or networking. Registration/inspection APIs that lack
+resource-level scoping have the minimum required wildcard permissions.
+
+Provision or update this role using the administrator profile:
+
+```bash
+python3 tools/deploy.py plan ci
+python3 tools/deploy.py apply ci --change-set <reviewed-change-set-arn>
+python3 tools/deploy.py status ci
+```
+
+This bootstrap is separate from application releases. The first actual GitHub
+OIDC authentication and automatic image rollout can be confirmed only after the
+workflow reaches `main`.
+
+## Prepare an operator release
 
 Use Node.js 22, Python 3, AWS CLI, and Docker with `linux/amd64` build support.
 Authenticate the local SSO profile `012619468172_AWSAdministratorAccess`.
@@ -18,7 +85,8 @@ npm test
 npm run build:verify
 python3 tools/smoke-production.py --dist .next-verify
 python3 tools/deploy.py validate
-uvx cfn-lint infra/foundation.yaml infra/service.yaml
+uvx --from cfn-lint==1.58.0 cfn-lint infra/foundation.yaml infra/service.yaml infra/ci.yaml
+python3 -m unittest discover -s tools -p 'test_*.py'
 ```
 
 Production credentials are not required to build the image. Normal OIDC startup
@@ -61,6 +129,7 @@ state values. Application log redaction does not redact ALB URLs.
 Populate `/internal-specs/prod/runtime` as one JSON secret. Required keys:
 
 - `GITHUB_TOKEN`: fine-grained service token for the selected spec repository;
+  Contents read-only for temporary testing. Full authenticated operation needs
   Contents, Pull requests, and Issues read/write permissions.
 - `OIDC_CLIENT_SECRET`: the dedicated JumpCloud application's secret.
 - `SESSION_SECRET`: at least 32 random bytes, encoded for an environment variable.
@@ -207,6 +276,16 @@ image digest and its configuration. Record both task definition revisions.
 The ECS circuit breaker can return to a previous successful deployment; no such
 revision exists on the first launch. A failed first release can be held at
 `DesiredCount=0` while it is corrected.
+
+For an automatic-release failure, inspect the Actions job and CloudFormation
+events before retrying. Do not start a competing operator update while the stack
+is updating or rolling back. The release summary/log records `previousImage`.
+An operator can also validate an existing deployment without changing it:
+
+```bash
+AWS_PROFILE=012619468172_AWSAdministratorAccess python3 tools/ci_release.py \
+  --verify-image '012619468172.dkr.ecr.us-west-2.amazonaws.com/internal-specs@sha256:<digest>'
+```
 
 Revert unintended specification changes through a GitHub PR; infrastructure
 rollback does not revert Git history. Remove DNS through its PR workflow and

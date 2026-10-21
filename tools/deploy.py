@@ -54,7 +54,7 @@ def run(command, **kwargs):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['validate', 'plan', 'apply', 'status', 'publish'])
-    parser.add_argument('stack', nargs='?', choices=['foundation', 'service'], default='foundation')
+    parser.add_argument('stack', nargs='?', choices=['foundation', 'service', 'ci'], default='foundation')
     parser.add_argument('--profile', default=f'{ACCOUNT}_AWSAdministratorAccess')
     parser.add_argument('--parameters', type=Path, help='JSON object of non-secret CloudFormation parameters')
     parser.add_argument('--change-set', help='Exact change set ARN returned by plan')
@@ -73,7 +73,7 @@ def main():
         return {item['OutputKey']: item['OutputValue'] for item in data['Stacks'][0].get('Outputs', [])}
 
     if args.action == 'validate':
-        for stack in ('foundation', 'service'):
+        for stack in ('foundation', 'service', 'ci'):
             aws('cloudformation', 'validate-template', '--template-body', f'file://{ROOT}/infra/{stack}.yaml')
             print(f'{stack}: template validated', flush=True)
         return
@@ -133,6 +133,10 @@ def main():
     forbidden = {'GITHUB_TOKEN', 'SESSION_SECRET', 'OIDC_CLIENT_SECRET', 'GLEAN_TOKEN', 'GLEAN_API_KEY', 'GLEAN_CLIENT_SECRET'}
     if forbidden.intersection(supplied):
         raise RuntimeError('Secret values do not belong in CloudFormation parameters')
+    if args.stack == 'ci':
+        existing = outputs('foundation')
+        for key in ('ExecutionRoleArn', 'TaskRoleArn'):
+            supplied[key] = existing[key]
     if args.stack == 'service':
         existing = outputs('foundation')
         for key in ('RuntimeSecretArn', 'ExecutionRoleArn', 'TaskRoleArn', 'TaskSecurityGroupId', 'TargetGroupArn', 'TargetGroupFullName', 'AlbFullName'):
@@ -162,7 +166,7 @@ def main():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as parameter_file:
         json.dump([{'ParameterKey': key, 'ParameterValue': str(value)} for key, value in supplied.items()], parameter_file)
         parameter_file.flush()
-        command = ['cloudformation', 'create-change-set', '--stack-name', stack_name, '--change-set-name', name, '--change-set-type', kind, '--template-body', f'file://{ROOT}/infra/{args.stack}.yaml', '--capabilities', 'CAPABILITY_IAM', '--parameters', f'file://{parameter_file.name}']
+        command = ['cloudformation', 'create-change-set', '--stack-name', stack_name, '--change-set-name', name, '--change-set-type', kind, '--template-body', f'file://{ROOT}/infra/{args.stack}.yaml', '--capabilities', 'CAPABILITY_NAMED_IAM', '--parameters', f'file://{parameter_file.name}']
         created = aws(*command)
     print(json.dumps(created), flush=True)
     aws('cloudformation', 'wait', 'change-set-create-complete', '--change-set-name', created['Id'])

@@ -28,6 +28,12 @@ GitHub token and Glean token; future OIDC fields remain empty. This amendment pe
 and DNS PR to proceed before JumpCloud setup; full-release criteria below still
 apply when returning to `AuthMode=oidc`.
 
+**CI amendment, requested 2026-10-21:** pushes to `main` should publish an ECR
+image and update ECS after application/infrastructure checks pass. Use a dedicated
+GitHub OIDC role, scan and deploy immutable image digests, and preserve current
+runtime parameters through an image-only CloudFormation change set. Pull requests
+remain validation-only. Infrastructure changes retain the operator plan/apply path.
+
 ## Approved decisions
 
 | Item | Decision | Status |
@@ -44,6 +50,7 @@ apply when returning to `AuthMode=oidc`.
 | Persistence | GitHub files, history, PRs, and issues; signed session cookies | Existing architecture |
 | Initial capacity | Two tasks, each 0.5 vCPU and 1 GiB RAM | Starting size to validate |
 | Infrastructure | CloudFormation, separate foundation and service templates | Approved baseline |
+| Automatic application releases | Checked `main` pushes publish ECR images and update the service stack; dedicated CI access stack | Requested by user; activation awaits workflow merge |
 
 A different
 spec repository or compiler remains possible through configuration. Per-team
@@ -372,7 +379,7 @@ network resources, the certificate, and the cluster throughout rollback.
 | 0 Plan review | Complete | User approval on 2026-10-21 |
 | 1 Confirm inputs | Complete with tracked dependencies | Account/network/cluster/certificate/quota and GitHub/DNS rules verified; credential and notification dependencies recorded above; cost baseline in runbook |
 | 2 Application preparation | Complete | 394 tests, lint, typecheck, verification build, standalone and AMD64 container smoke pass |
-| 3 Infrastructure and tooling | Complete; advisory review tracked | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); CI checks pass on release `247140b`; scanner dispositions are recorded in the runbook |
+| 3 Infrastructure and tooling | Operator tooling complete; main-branch release workflow prepared | [Application PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); dedicated CI role provisioned and validated; automatic releases await workflow merge; scanner dispositions recorded in the runbook |
 | 4 Foundation and image | Complete for test deployment | Test-mode image `247140b` published and scanned: zero ECR OS findings; encrypted runtime secret initialized |
 | 5 Service infrastructure checks | Test service verified | UPDATE_COMPLETE after Glean secret mapping; two healthy targets across two AZs; private task networking, HTTPS 200, writes/OIDC 403, and non-allowlisted network denial verified |
 | 6 DNS PR and application | Complete | [DNS PR #49](https://github.com/wyzelabs-inc/wyze-dns-config/pull/49) merged at 20:14 UTC on 2026-10-21; final hostname resolves to the ALB and HTTPS works |
@@ -500,6 +507,36 @@ Ask/state-generation checks pass; OIDC and authenticated write acceptance remain
   remain unrelated to this addition. PR #49 subsequently merged at
   `2026-10-21T20:14:17Z`; the final hostname resolves to the intended ALB and the
   live health and GitHub read endpoints return 200 with valid TLS.
+
+### Main-branch release automation evidence
+
+- Added a deployment job to `.github/workflows/checks.yml`, dependent on both
+  application and infrastructure checks and restricted to pushes on `main`.
+  Pull requests cannot run that job. Releases are serialized and stale commits
+  are skipped before building and before applying the image update.
+- Added `tools/ci_release.py`: build/push immutable AMD64 images, require completed
+  ECR scans without high/critical findings, preserve all current stack settings,
+  and validate an image-only change set before execution with rollback enabled.
+  Completion requires the intended image digest, healthy tasks across AZs, and
+  healthy ALB targets; a stable rollback cannot be reported as a successful release.
+- Provisioned `internal-specs-ci`, `CREATE_COMPLETE`, with one IAM role:
+  `arn:aws:iam::012619468172:role/internal-specs-github-deploy`.
+  Change set `review-1792616983` added only that role. The existing OIDC provider,
+  production image, service parameters, foundation, and shared resources are unchanged.
+- Verified the repository's immutable OIDC subject through GitHub's API and the
+  deployed trust policy. AWS Access Analyzer reports zero policy findings.
+  All 15 IAM simulation checks pass: eight expected allows and seven expected
+  denials cover service-scoped release permissions and unrelated
+  repositories/services, foundation updates, secret-value reads, unrelated role
+  passing, IAM role creation, and task registration outside Oregon.
+- Validation passes: 10 deployment-tool tests, 394 application tests, lint,
+  typecheck, build, actionlint, cfn-lint, and all three AWS template validations.
+  The new read-only release verifier passes against the current two healthy tasks.
+  A real image-only CloudFormation plan passed the automated change guard and was
+  deleted without execution; no production image change was made during this check.
+- The first GitHub OIDC login, automated ECR push, and ECS rollout remain to be
+  observed after PR #1 reaches `main`. See the runbook for bootstrap, release
+  behavior, failure recovery, and operator rollback.
 
 ## References
 
