@@ -1,6 +1,6 @@
 # Internal Specs AWS Deployment Master Plan
 
-Status: **Approved and implementation in progress**
+Status: **Foundation and image ready; service launch awaits runtime credentials**
 
 Prepared: **2026-10-21**
 
@@ -184,7 +184,7 @@ while resolving these dependencies, but do not launch with placeholder values.
 | GitHub service token and confirmation of repository access | Secure location requested from user; required before service launch. Operator GitHub CLI access works and is not the runtime credential. |
 | Glean credential and successful spec-only agent call | Secure location requested from user; required before service launch and tenant validation |
 | Approved sandbox repository and separately scoped test credentials | Requested from user; required before write-path acceptance |
-| Existing operational alert destination | User/service owner to supply before notification acceptance; metric alarms can be created independently |
+| Existing operational alert destination | User/service owner to supply before notification acceptance; the account contains only an unrelated staging SNS topic, which was not reused |
 | DNS code-owner review and production environment approval | Required by the DNS repository after the healthy-service checks |
 
 The DNS repository's existing process requires another code owner's review and
@@ -361,11 +361,11 @@ network resources, the certificate, and the cluster throughout rollback.
 | 0 Plan review | Complete | User approval on 2026-10-21 |
 | 1 Confirm inputs | Complete with tracked dependencies | Account/network/cluster/certificate/quota and GitHub/DNS rules verified; credential and notification dependencies recorded above; cost baseline in runbook |
 | 2 Application preparation | Complete | 383 tests, lint, typecheck, verification build, standalone and AMD64 container smoke pass |
-| 3 Infrastructure and tooling | Complete; scanner review tracked | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); application, infrastructure and CodeQL CI pass on initial commit; revised foundation passes local/AWS validation; current CI reruns and documented scanner findings remain visible in PR |
-| 4 Foundation and image | In progress | Revised change set prepared; runtime credentials pending |
-| 5 Service infrastructure checks | Not started | |
-| 6 DNS PR and application | Not started | |
-| 7 Integrations and release | Not started | |
+| 3 Infrastructure and tooling | Complete; advisory review tracked | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); CI checks pass on the deployed foundation commit; scanner dispositions are recorded in the runbook |
+| 4 Foundation and image | Foundation/image complete; credentials pending | Stack is UPDATE_COMPLETE and IN_SYNC; patched image published with zero ECR OS findings; runtime secret has no value versions |
+| 5 Service infrastructure checks | Waiting for runtime credentials | No ECS service/tasks created; preliminary ALB TLS and host-routing probes pass |
+| 6 DNS PR and application | Waiting for healthy service | Hostname remains NXDOMAIN; DNS PR has not been opened |
+| 7 Integrations and release | Waiting for service, DNS, and sandbox inputs | Live authentication, provider calls, sandbox writes, off-network denial, replacement, rollback, and observation remain pending |
 
 Approval record: **Approved by the user on 2026-10-21: “looks good, let get start.”** Update each phase with its commit/PR, relevant AWS
 outputs, test results, and remaining dependencies as execution progresses.
@@ -382,7 +382,11 @@ outputs, test results, and remaining dependencies as execution progresses.
   `git diff --check`: pass.
 - Production dependency audit: zero critical/high/moderate, two low findings
   in the Mermaid/KaTeX dependency path. Full development audit has additional
-  tooling findings; see the runbook. Final container scan remains required.
+  tooling findings; see the runbook. The first container scan identified
+  CVE-2026-85091 in Alpine's `zlib 1.3.2-r0`; the patched candidate installs
+  `1.3.2-r1`. The replacement scan completed with zero OS findings, and the unused
+  vulnerable candidate was removed from ECR. Alpine records that fixed version in its
+  [security database](https://secdb.alpinelinux.org/v3.24/main.json).
 - Browser inspection confirms the sign-in screen loads its assets and calls only
   the minimal auth-status endpoint before login. [Screenshot](deployment-sign-in.png).
 - AMD64 container builds without credentials. At 0.5 vCPU and 1 GiB, it serves
@@ -393,6 +397,46 @@ outputs, test results, and remaining dependencies as execution progresses.
   no shared-resource changes. Superseded before execution to add KMS encryption,
   deletion protection, ALB access logs, and security-rule descriptions in response
   to CI findings. The revised template contains 16 service-owned resources.
+
+### Provisioned foundation and release candidate
+
+| Item | Recorded value |
+| --- | --- |
+| Foundation stack | `internal-specs-foundation`, `UPDATE_COMPLETE` |
+| Stack ID suffix | `71fc1260-cd7c-11f1-9312-02e37fe28139` |
+| Drift check | `IN_SYNC`, zero drifted resources |
+| ALB resource name | `wyze-internal-specs` (AWS reserves the `internal-` name prefix) |
+| ALB DNS target | `wyze-internal-specs-1589150793.us-west-2.elb.amazonaws.com` |
+| Runtime secret | `/internal-specs/prod/runtime`; ARN suffix `runtime-eddM1Z`; empty pending secure credential provisioning |
+| Application logs | `/ecs/internal-specs`, 30-day retention, service KMS key |
+| ALB access logs | `internal-specs-alb-logs-012619468172-us-west-2`, 30-day expiry; log-delivery test file verified |
+| Release commit | `88f65ac8e748177e2b4220054fa1d3a1b9fad91e` |
+| Candidate image | `012619468172.dkr.ecr.us-west-2.amazonaws.com/internal-specs@sha256:c727a39040d083e8384643f84e15c2ebcca7172539915631e7728f967c089519` |
+| Candidate scan | COMPLETE, zero ECR basic OS findings; production npm audit separately retains two low findings |
+
+AWS checks verified the exact six allowed ingress CIDRs, HTTPS-only listener,
+ALB-to-task security-group isolation, KMS encryption/rotation, log delivery,
+and scoped secret access. IAM simulation permits the execution role to read
+this service's secret and denies an unrelated secret. Actual task secret
+retrieval and outbound provider connections await the service launch.
+
+A client connection override preserving `internal-specs.wyze.com` validates TLS
+and reaches the ALB. The service host returns 503 with no targets; an unexpected
+Host header returns 404. This is foundation evidence, not a passing application
+health check. Public DNS still returns NXDOMAIN.
+
+Provisioning recovered from two AWS validation failures: a reserved ALB name and
+an overly restrictive log-delivery policy. The five retained service resources
+were imported into the current stack before adding the remaining eleven. The
+final policy uses AWS's account/region delivery scope and its service-principal
+exception for redacted network context. The stack now has no drift; no shared
+network, cluster, certificate, or existing application resources were changed.
+
+The release image was built and tested from `88f65ac`; subsequent documentation
+commits record deployment evidence and do not change that image. Application,
+infrastructure, CodeQL, secret scanning, and Lacework SCA checks pass for that
+commit. Wiz's advisory result and the remaining infrastructure scanner review
+are visible in PR #1. No real GitHub/Glean/OIDC integration success is claimed.
 
 ## References
 
