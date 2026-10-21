@@ -17,3 +17,8 @@ index.html
 *.tsbuildinfo
 .playwright-cli
 output
+docs
+infra
+tools
+AGENTS.md
+.claude

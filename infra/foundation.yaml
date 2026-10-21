@@ -157,7 +157,7 @@ Resources:
               ArnLike:
                 aws:SourceArn:
                   Fn::Sub: >-
-                    arn:${AWS::Partition}:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/wyze-internal-specs/*
+                    arn:${AWS::Partition}:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/*
           - Sid: DenyInsecureTransport
             Effect: Deny
             Principal: '*'
@@ -170,6 +170,7 @@ Resources:
             Condition:
               Bool:
                 aws:SecureTransport: 'false'
+                aws:PrincipalIsAWSService: 'false'
   Repository:
     Type: AWS::ECR::Repository
     Properties:

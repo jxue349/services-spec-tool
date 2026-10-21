@@ -49,7 +49,9 @@ and protects the runtime secret, application logs, and image repository.
 
 The private access-log bucket expires objects after 30 days. It uses SSE-S3,
 the encryption mode supported by [ALB log delivery](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html).
-Its policy permits only this account's named ALB and rejects non-TLS access.
+Its delivery policy is restricted to this account and region. Non-service
+principals must use TLS; the AWS service exception follows
+[S3 guidance for service-to-service requests](https://docs.aws.amazon.com/AmazonS3/latest/userguide/amazon-s3-policy-keys.html).
 Restrict operator access: ALB request URLs can contain OIDC callback codes and
 state values. Application log redaction does not redact ALB URLs.
 
@@ -207,3 +209,6 @@ The following configuration is intentional and remains visible to reviewers:
   of one year is not the configured retention policy.
 - The ALB log bucket uses SSE-S3 as required by AWS log delivery; other persistent
   service resources use the rotating customer-managed KMS key.
+- The operational log bucket has no cross-region replication or separate bucket
+  access-log destination. The application has no dependency on these logs for
+  persistence or recovery; its source of truth is GitHub.
