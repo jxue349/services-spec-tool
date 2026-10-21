@@ -21,3 +21,8 @@ next-env.d.ts
 
 .DS_Store
 .next-verify/
+
+# Python deployment tooling
+__pycache__/
+.playwright-cli/
+output/playwright/

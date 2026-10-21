@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import type { NextResponse } from 'next/server';
 import { compile } from '@/lib/compiler';
 import { runCompileRoute } from '@/lib/compile-route';
@@ -12,8 +13,10 @@ export const maxDuration = 60;
  * spec <-> prototype <-> QA consistency check. QA coverage is only judged when
  * the client passes a test matrix compiled this session; otherwise "unknown".
  */
-export function POST(req: Request): Promise<NextResponse> {
+function handlePOST(req: Request): Promise<NextResponse> {
   return runCompileRoute('POST /api/compile/consistency', req, ConsistencyRequestSchema, (body) =>
     compile(consistencyPrompt(body.spec, body.testMatrix), ConsistencySchema),
   );
 }
+
+export const POST = withApiAccess(handlePOST, { readOnly: true });

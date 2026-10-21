@@ -1,0 +1,410 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Internal Specs service; OIDC by default with an explicit read-only test mode
+Parameters:
+  ClusterName:
+    Type: String
+    Description: Existing ECS cluster
+    Default: wyze-internal
+  PrivateSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: subnet-06b338c1440dbb2fe,subnet-06b5d9cd8e4361625
+  ImageUri:
+    Type: String
+    Description: ECR digest, not a mutable tag
+    AllowedPattern: ^012619468172\.dkr\.ecr\.us-west-2\.amazonaws\.com/internal-specs@sha256:[a-f0-9]{64}$
+  RuntimeSecretArn:
+    Type: String
+    Description: Foundation stack output
+  ExecutionRoleArn:
+    Type: String
+    Description: Foundation stack output
+  TaskRoleArn:
+    Type: String
+    Description: Foundation stack output
+  TaskSecurityGroupId:
+    Type: String
+    Description: Foundation stack output
+  TargetGroupArn:
+    Type: String
+    Description: Foundation stack output
+  TargetGroupFullName:
+    Type: String
+    Description: Foundation stack output
+  AlbFullName:
+    Type: String
+    Description: Foundation stack output
+  AuthMode:
+    Type: String
+    Description: Temporarily select test-readonly to test behind the VPN without SSO or repository writes
+    Default: oidc
+    AllowedValues: [oidc, test-readonly]
+  OidcIssuer:
+    Type: String
+    Description: JumpCloud OIDC issuer
+    Default: ''
+    AllowedPattern: ^$|https://.+
+  OidcClientId:
+    Type: String
+    Description: JumpCloud application client ID
+    Default: ''
+  GleanCredentialMode:
+    Type: String
+    Description: Auto accepts exactly one populated credential type from the runtime secret
+    Default: auto
+    AllowedValues:
+      - auto
+      - oauth
+      - token
+  GitHubOwner:
+    Type: String
+    Description: Spec repository owner
+    Default: wyzelabs-inc
+  GitHubRepo:
+    Type: String
+    Description: Spec repository name
+    Default: KB-Spec-explorer
+  DesiredCount:
+    Type: Number
+    Default: 2
+    MinValue: 0
+    MaxValue: 4
+  AlarmTopicArn:
+    Type: String
+    Description: Optional existing SNS topic; configure its policy to accept EventBridge
+    Default: ''
+Rules:
+  RequireOidcConfiguration:
+    RuleCondition: !Equals [!Ref AuthMode, oidc]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref OidcIssuer, '']]
+        AssertDescription: OidcIssuer is required when AuthMode is oidc
+      - Assert: !Not [!Equals [!Ref OidcClientId, '']]
+        AssertDescription: OidcClientId is required when AuthMode is oidc
+Conditions:
+  IncludeGleanOAuth: !Not [!Equals [!Ref GleanCredentialMode, token]]
+  IncludeGleanToken: !Not [!Equals [!Ref GleanCredentialMode, oauth]]
+  HasAlarmTopic:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: AlarmTopicArn
+          - ''
+Resources:
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: internal-specs
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ExecutionRoleArn:
+        Ref: ExecutionRoleArn
+      TaskRoleArn:
+        Ref: TaskRoleArn
+      ContainerDefinitions:
+        - Name: web
+          Image:
+            Ref: ImageUri
+          Essential: true
+          User: '1001'
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          StopTimeout: 120
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+            - Name: AWS_REGION
+              Value: us-west-2
+            - Name: PORT
+              Value: '3000'
+            - Name: HOSTNAME
+              Value: 0.0.0.0
+            - Name: KEEP_ALIVE_TIMEOUT
+              Value: '185000'
+            - Name: APP_BASE_URL
+              Value: https://internal-specs.wyze.com
+            - Name: DEV_AUTH_BYPASS
+              Value: 'false'
+            - Name: AUTH_MODE
+              Value: !Ref AuthMode
+            - Name: OIDC_ALLOWED_EMAIL_DOMAINS
+              Value: wyze.com
+            - Name: OIDC_ISSUER
+              Value:
+                Ref: OidcIssuer
+            - Name: OIDC_CLIENT_ID
+              Value:
+                Ref: OidcClientId
+            - Name: COMPILER_PROVIDER
+              Value: glean
+            - Name: GLEAN_INSTANCE
+              Value: wyze
+            - Name: GLEAN_AGENT
+              Value: GPT
+            - Name: GLEAN_COMPANY_KNOWLEDGE
+              Value: 'false'
+            - Name: GITHUB_OWNER
+              Value:
+                Ref: GitHubOwner
+            - Name: GITHUB_REPO
+              Value:
+                Ref: GitHubRepo
+            - Name: SPEC_ROOT
+              Value: specs
+            - Name: SPEC_DEFAULT_TEAM
+              Value: services
+            - Name: SPEC_PARENT_PATH
+              Value: specs/services/parent.md
+            - Name: SPEC_BASE_BRANCH
+              Value: main
+            - Name: ALLOW_DIRECT_COMMIT
+              Value: 'false'
+            - Name: GIT_AUTHOR_NAME
+              Value: AI Spec Explorer
+            - Name: GIT_AUTHOR_EMAIL
+              Value: spec-explorer@wyze.com
+          Secrets:
+            - Name: GITHUB_TOKEN
+              ValueFrom: !Sub '${RuntimeSecretArn}:GITHUB_TOKEN::'
+            - Name: OIDC_CLIENT_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:OIDC_CLIENT_SECRET::'
+            - Name: SESSION_SECRET
+              ValueFrom: !Sub '${RuntimeSecretArn}:SESSION_SECRET::'
+            - Name: GLEAN_ACT_AS
+              ValueFrom: !Sub '${RuntimeSecretArn}:GLEAN_ACT_AS::'
+            - !If
+              - IncludeGleanOAuth
+              - Name: GLEAN_CLIENT_ID
+                ValueFrom: !Sub '${RuntimeSecretArn}:GLEAN_CLIENT_ID::'
+              - !Ref AWS::NoValue
+            - !If
+              - IncludeGleanOAuth
+              - Name: GLEAN_CLIENT_SECRET
+                ValueFrom: !Sub '${RuntimeSecretArn}:GLEAN_CLIENT_SECRET::'
+              - !Ref AWS::NoValue
+            - !If
+              - IncludeGleanToken
+              - Name: GLEAN_API_KEY
+                ValueFrom: !Sub '${RuntimeSecretArn}:GLEAN_TOKEN::'
+              - !Ref AWS::NoValue
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/internal-specs
+              awslogs-region: us-west-2
+              awslogs-stream-prefix: web
+          HealthCheck:
+            Command:
+              - CMD
+              - node
+              - '-e'
+              - >-
+                fetch('http://127.0.0.1:3000/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          LinuxParameters:
+            InitProcessEnabled: true
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: internal-specs
+      Cluster:
+        Ref: ClusterName
+      LaunchType: FARGATE
+      PlatformVersion: 1.4.0
+      DesiredCount:
+        Ref: DesiredCount
+      TaskDefinition:
+        Ref: TaskDefinition
+      HealthCheckGracePeriodSeconds: 60
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            Ref: PrivateSubnets
+          SecurityGroups:
+            - Ref: TaskSecurityGroupId
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - TargetGroupArn:
+            Ref: TargetGroupArn
+          ContainerName: web
+          ContainerPort: 3000
+      EnableECSManagedTags: true
+  CpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Internal Specs CpuAlarm
+      Namespace: AWS/ECS
+      MetricName: CPUUtilization
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 75
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: ClusterName
+          Value:
+            Ref: ClusterName
+        - Name: ServiceName
+          Value: internal-specs
+      AlarmActions:
+        Fn::If:
+          - HasAlarmTopic
+          - - Ref: AlarmTopicArn
+          - []
+      OKActions:
+        Fn::If:
+          - HasAlarmTopic
+          - - Ref: AlarmTopicArn
+          - []
+  MemoryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Internal Specs MemoryAlarm
+      Namespace: AWS/ECS
+      MetricName: MemoryUtilization
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: ClusterName
+          Value:
+            Ref: ClusterName
+        - Name: ServiceName
+          Value: internal-specs
+      AlarmActions:
+        Fn::If:
+          - HasAlarmTopic
+          - - Ref: AlarmTopicArn
+          - []
+      OKActions:
+        Fn::If:
+          - HasAlarmTopic
+          - - Ref: AlarmTopicArn
+          - []
+  HealthyTargetsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Internal Specs HealthyTargetsAlarm
+      Namespace: AWS/ApplicationELB
+      MetricName: HealthyHostCount
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 2
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value:
+            Ref: AlbFullName
+        - Name: TargetGroup
+          Value:
+            Ref: TargetGroupFullName
+      AlarmActions:
+        Fn::If:
+          - HasAlarmTopic
+          - - Ref: AlarmTopicArn
+          - []
+      OKActions:
+        Fn::If:
+          - HasAlarmTopic
+          - - Ref: AlarmTopicArn
+          - []
+  TargetErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Internal Specs TargetErrorsAlarm
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value:
+            Ref: AlbFullName
+      AlarmActions:
+        Fn::If:
+          - HasAlarmTopic
+          - - Ref: AlarmTopicArn
+          - []
+      OKActions:
+        Fn::If:
+          - HasAlarmTopic
+          - - Ref: AlarmTopicArn
+          - []
+  AlbErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Internal Specs AlbErrorsAlarm
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_ELB_5XX_Count
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value:
+            Ref: AlbFullName
+      AlarmActions:
+        Fn::If:
+          - HasAlarmTopic
+          - - Ref: AlarmTopicArn
+          - []
+      OKActions:
+        Fn::If:
+          - HasAlarmTopic
+          - - Ref: AlarmTopicArn
+          - []
+  DeploymentFailureRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Notify the configured topic when the ECS deployment circuit breaker fails
+      EventPattern:
+        source:
+          - aws.ecs
+        detail-type:
+          - ECS Deployment State Change
+        resources:
+          - Ref: Service
+        detail:
+          eventName:
+            - SERVICE_DEPLOYMENT_FAILED
+      Targets:
+        - Id: AlarmTopic
+          Arn:
+            Ref: AlarmTopicArn
+    Condition: HasAlarmTopic
+Outputs:
+  ServiceArn:
+    Value:
+      Ref: Service
+  TaskDefinitionArn:
+    Value:
+      Ref: TaskDefinition
+  Url:
+    Value: https://internal-specs.wyze.com

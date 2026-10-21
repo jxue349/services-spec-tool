@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
@@ -14,7 +15,7 @@ const HISTORY_LIMIT = 10;
  * Last 10 commits touching one spec, for the history drawer. Those commits
  * *are* the version history — v1 is the first of them.
  */
-export async function GET(req: Request): Promise<NextResponse> {
+async function handleGET(req: Request): Promise<NextResponse> {
   const requestId = newRequestId();
   try {
     const env = getSpecEnv();
@@ -39,3 +40,5 @@ export async function GET(req: Request): Promise<NextResponse> {
     return apiErrorFromUnknown('GET /api/spec/history', err, requestId);
   }
 }
+
+export const GET = withApiAccess(handleGET, { readOnly: true });

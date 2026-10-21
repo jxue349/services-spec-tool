@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { SESSION_COOKIE } from '@/lib/auth/session';
 
@@ -11,8 +12,10 @@ export const dynamic = 'force-dynamic';
  * of every app behind the same IdP, which is rarely what someone closing one
  * tool intends.
  */
-export async function POST(): Promise<NextResponse> {
+async function handlePOST(): Promise<NextResponse> {
   const res = NextResponse.json({ ok: true });
   res.cookies.delete(SESSION_COOKIE);
   return res;
 }
+
+export const POST = withApiAccess(handlePOST, { public: true });

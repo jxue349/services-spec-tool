@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic';
  * Loads one spec at the head of the base branch, with version metadata.
  * `?path=` selects a child spec; omitted means the parent / knowledge base.
  */
-export async function GET(req: Request): Promise<NextResponse> {
+async function handleGET(req: Request): Promise<NextResponse> {
   const requestId = newRequestId();
   try {
     const env = getSpecEnv();
@@ -30,3 +31,5 @@ export async function GET(req: Request): Promise<NextResponse> {
     return apiErrorFromUnknown('GET /api/spec', err, requestId);
   }
 }
+
+export const GET = withApiAccess(handleGET, { readOnly: true });

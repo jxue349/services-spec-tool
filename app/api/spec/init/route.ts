@@ -1,3 +1,5 @@
+import { requireWriteIdentity } from '@/lib/auth/require-user';
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
@@ -12,9 +14,10 @@ export const dynamic = 'force-dynamic';
  * branch + PR flow as any other spec change, so the first version is reviewed
  * like every version after it.
  */
-export async function POST(): Promise<NextResponse> {
+async function handlePOST(): Promise<NextResponse> {
   const requestId = newRequestId();
   try {
+    const { author } = await requireWriteIdentity();
     const env = getSpecEnv();
     const client = createSpecRepoClient(env);
     const result = await commitSpec(client, env, {
@@ -24,6 +27,7 @@ export async function POST(): Promise<NextResponse> {
       commitMessage: SEED_COMMIT_MESSAGE,
       prTitle: SEED_PR_TITLE,
       prBody: SEED_PR_BODY,
+      author,
     });
     return NextResponse.json(result);
   } catch (err) {
@@ -33,3 +37,5 @@ export async function POST(): Promise<NextResponse> {
     return apiErrorFromUnknown('POST /api/spec/init', err, requestId);
   }
 }
+
+export const POST = withApiAccess(handlePOST);

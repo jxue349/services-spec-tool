@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import * as client from 'openid-client';
 import { apiErrorFromUnknown, newRequestId } from '@/lib/errors';
@@ -7,7 +8,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** Starts sign-in: redirects to JumpCloud with PKCE, state and nonce. */
-export async function GET(): Promise<NextResponse> {
+async function handleGET(): Promise<NextResponse> {
   const requestId = newRequestId();
   try {
     const env = getOidcEnv();
@@ -36,3 +37,5 @@ export async function GET(): Promise<NextResponse> {
     return apiErrorFromUnknown('GET /api/auth/login', err, requestId);
   }
 }
+
+export const GET = withApiAccess(handleGET, { public: true, oidcOnly: true });

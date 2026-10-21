@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { compile } from '@/lib/compiler';
 import { getSpecEnv } from '@/lib/env';
@@ -52,10 +53,10 @@ function tooMany(retryAfterSeconds: number, requestId: string): NextResponse {
   );
 }
 
-export async function POST(req: Request): Promise<NextResponse> {
+async function handlePOST(req: Request): Promise<NextResponse> {
   const requestId = newRequestId();
 
-  const key = clientKey(req.headers);
+  const key = clientKey();
 
   // Before parsing, not after: this gate is what stops a flood of 100 KB
   // bodies from being parsed at all.
@@ -215,3 +216,5 @@ async function askAcrossTeams(draft: string, question: string, draftPath?: strin
     companyKnowledge,
   };
 }
+
+export const POST = withApiAccess(handlePOST, { readOnly: true });

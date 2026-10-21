@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 # AI Spec Explorer — single Node service.
 #
-# No secrets are baked in: ANTHROPIC_API_KEY / GITHUB_TOKEN are supplied at
+# No secrets are baked in: Glean, GitHub, and JumpCloud credentials are supplied at
 # run time. The build stage never needs them, so nothing sensitive can end up
 # in an image layer.
 # ---------------------------------------------------------------------------
@@ -26,10 +26,13 @@ WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
-    HOSTNAME=0.0.0.0
+    HOSTNAME=0.0.0.0 \
+    KEEP_ALIVE_TIMEOUT=185000
 
+# Patch CVE-2026-85091 until the Node base image includes the Alpine zlib fix.
 # Run as a non-root user with no shell.
-RUN addgroup --system --gid 1001 nodejs \
+RUN apk add --no-cache --upgrade 'zlib>=1.3.2-r1' \
+ && addgroup --system --gid 1001 nodejs \
  && adduser --system --uid 1001 --ingroup nodejs --shell /sbin/nologin nextjs
 
 # `output: 'standalone'` emits a self-contained server plus a minimal
@@ -41,6 +44,6 @@ USER nextjs
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:3000/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.js"]

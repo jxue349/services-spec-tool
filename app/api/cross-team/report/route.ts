@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { NotSignedInError, requireWriteIdentity } from '@/lib/auth/require-user';
 import {
@@ -36,10 +37,10 @@ export const dynamic = 'force-dynamic';
  */
 const REPORT_LIMIT_PER_MIN = 10;
 
-export async function POST(req: Request): Promise<NextResponse> {
+async function handlePOST(req: Request): Promise<NextResponse> {
   const requestId = newRequestId();
 
-  const limit = checkRateLimit(`cross-team:${clientKey(req.headers)}`, REPORT_LIMIT_PER_MIN);
+  const limit = checkRateLimit(`cross-team:${clientKey()}`, REPORT_LIMIT_PER_MIN);
   if (!limit.ok) {
     return NextResponse.json(
       { error: `Too many reports. Retry in ${limit.retryAfterSeconds}s.`, requestId },
@@ -141,3 +142,5 @@ export async function POST(req: Request): Promise<NextResponse> {
     return apiErrorFromUnknown('POST /api/cross-team/report', err, requestId);
   }
 }
+
+export const POST = withApiAccess(handlePOST);

@@ -1,3 +1,4 @@
+import { requestSignal, throwIfRequestAborted } from '../request-context';
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import type { ContentBlock, Message } from '@aws-sdk/client-bedrock-runtime';
 import { getBedrockEnv } from '../env';
@@ -64,6 +65,7 @@ export function textFromConverse(output: unknown): string {
 }
 
 async function once(systemPrompt: string, userPrompt: string): Promise<string> {
+  throwIfRequestAborted();
   const { modelId, region, temperature } = getBedrockEnv();
 
   try {
@@ -74,6 +76,7 @@ async function once(systemPrompt: string, userPrompt: string): Promise<string> {
         messages: [{ role: 'user', content: [{ text: userPrompt }] }],
         inferenceConfig: { maxTokens: COMPILE_MAX_TOKENS, temperature },
       }),
+      { abortSignal: requestSignal() },
     );
     return textFromConverse(res);
   } catch (err) {

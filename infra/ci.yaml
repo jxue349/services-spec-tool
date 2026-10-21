@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: GitHub main-branch release permissions for Internal Specs
+Parameters:
+  ExecutionRoleArn:
+    Type: String
+  TaskRoleArn:
+    Type: String
+Resources:
+  DeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: internal-specs-github-deploy
+      Description: Publish Internal Specs images and update its CloudFormation-managed ECS service
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # Verified via GitHub's OIDC settings API; this repository uses immutable subjects.
+                token.actions.githubusercontent.com:sub: repo:wyzelabs-inc@49417549/KB-Spec-explorer@1422531627:ref:refs/heads/main
+      Policies:
+        - PolicyName: InternalSpecsRelease
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: RegistryLogin
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Sid: PublishAndScanImages
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+                  - ecr:DescribeImages
+                  - ecr:DescribeImageScanFindings
+                Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/internal-specs
+              - Sid: ReadServiceStack
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:GetTemplate
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/internal-specs-service/*
+              - Sid: ReleaseChangeSets
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/internal-specs-service/*
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:changeSet/internal-specs-release-*/*
+              - Sid: RegisterAndInspectTaskDefinitions
+                Effect: Allow
+                # These APIs do not support a family ARN resource restriction.
+                Action:
+                  - ecs:RegisterTaskDefinition
+                  - ecs:DescribeTaskDefinition
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
+              - Sid: ValidateExistingSubnetParameters
+                Effect: Allow
+                # CloudFormation calls this for List<AWS::EC2::Subnet::Id>, even with UsePreviousValue.
+                Action: ec2:DescribeSubnets
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
+              - Sid: ManageServiceTaskDefinitions
+                Effect: Allow
+                Action:
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:TagResource
+                  - ecs:UntagResource
+                  - ecs:ListTagsForResource
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/internal-specs:*
+              - Sid: UpdateOnlyThisService
+                Effect: Allow
+                Action:
+                  - ecs:UpdateService
+                  - ecs:DescribeServices
+                  - ecs:ListTagsForResource
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/wyze-internal/internal-specs
+              - Sid: ListClusterTasks
+                Effect: Allow
+                Action: ecs:ListTasks
+                Resource: '*'
+                Condition:
+                  ArnEquals:
+                    ecs:cluster: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/wyze-internal
+              - Sid: InspectClusterTasks
+                Effect: Allow
+                Action: ecs:DescribeTasks
+                Resource: !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/wyze-internal/*
+              - Sid: InspectTargetHealth
+                Effect: Allow
+                Action: elasticloadbalancing:DescribeTargetHealth
+                Resource: '*'
+              - Sid: PassOnlyRuntimeRoles
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: [!Ref ExecutionRoleArn, !Ref TaskRoleArn]
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: ecs-tasks.amazonaws.com
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value: cxu@wyze.com
+Outputs:
+  DeploymentRoleArn:
+    Value: !GetAtt DeploymentRole.Arn

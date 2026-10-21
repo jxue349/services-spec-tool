@@ -23,12 +23,18 @@ export function redact(input: string): string {
     .replace(/gh[pousr]_[A-Za-z0-9_]+/g, 'gh?_[REDACTED]')
     .replace(/github_pat_[A-Za-z0-9_]+/g, 'github_pat_[REDACTED]')
     // Glean platform tokens are opaque, so the header is what we can match on.
-    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, 'Bearer [REDACTED]')
+    .replace(/(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi, '$1 [REDACTED]')
     .replace(/(authorization|x-api-key|x-glean-actas)(["']?\s*[:=]\s*["']?)[^"'\s,}]+/gi, '$1$2[REDACTED]');
 }
 
 /** Logs server-side with a correlatable id; the client only ever sees the id. */
 export function logServerError(requestId: string, scope: string, err: unknown): void {
+  // Parser and schema errors can contain excerpts of model output. Keep the
+  // detailed message for corrective retries, but never put it into logs.
+  if (err instanceof Error && ['JsonExtractionError', 'SchemaValidationError'].includes(err.name)) {
+    console.error(`[${requestId}] ${scope} ${err.name}`);
+    return;
+  }
   const message = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
   const stack = err instanceof Error && err.stack ? `\n${err.stack}` : '';
   console.error(`[${requestId}] ${scope} ${redact(message + stack)}`);
@@ -70,7 +76,7 @@ export function apiErrorFromUnknown(scope: string, err: unknown, requestId: stri
     return apiError(429, 'Upstream rate limit hit. Wait a moment and retry.', requestId);
   }
   if (err instanceof Error && /abort|timeout/i.test(err.name + err.message)) {
-    return apiError(504, 'The request timed out after 30s. Try again.', requestId);
+    return apiError(504, 'The request timed out. Try again.', requestId);
   }
 
   return apiError(500, 'Something went wrong on the server.', requestId);

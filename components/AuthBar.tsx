@@ -41,18 +41,28 @@ export function AuthBar({ onUserChange }: { onUserChange: (user: MeResponse['use
         setMe(res);
         onUserChange(res.user);
       })
-      .catch(() => setMe({ authConfigured: false, user: null }));
+      .catch(() => setAuthError('Unable to check sign-in. Refresh to try again.'));
   }, [onUserChange]);
 
-  if (me === null) return null;
+  if (me === null) return authError ? <span className="text-sm text-warning">{authError}</span> : null;
+
+  if (me.authMode === 'test-readonly') {
+    const missing = [!me.integrations?.github && 'GitHub', !me.integrations?.compiler && 'Glean'].filter(Boolean);
+    return (
+      <span className="rounded border border-warning/50 bg-warning/10 px-2 py-1 text-xs text-warning">
+        SSO disabled for testing · Repository changes disabled
+        {missing.length > 0 ? ` · Awaiting ${missing.join(' and ')} credentials` : ''}
+      </span>
+    );
+  }
 
   if (!me.authConfigured) {
     return (
       <span
         className="rounded border border-warning/50 bg-warning/10 px-2 py-0.5 font-mono text-[10px] text-warning"
-        title="OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET and SESSION_SECRET are not all set. Changes are attributed to the service account."
+        title="Local development is running without sign-in."
       >
-        sign-in not configured
+        local development
       </span>
     );
   }

@@ -1,3 +1,4 @@
+import { requestSignal } from '../request-context';
 import { getCompilerEnv } from '../env';
 import type { CompilerEnv } from '../env';
 import { COMPILE_TIMEOUT_MS, isRetryableStatus, isTimeout } from './types';
@@ -98,7 +99,7 @@ async function fetchClientCredentialsToken(
       'content-type': 'application/x-www-form-urlencoded',
       accept: 'application/json',
     },
-    signal: AbortSignal.timeout(COMPILE_TIMEOUT_MS),
+    signal: requestSignal(COMPILE_TIMEOUT_MS),
     body: new URLSearchParams({ grant_type: 'client_credentials', scope }).toString(),
   });
 
@@ -149,7 +150,7 @@ async function chatOnce(systemPrompt: string, prompt: string): Promise<string> {
   const res = await fetch(`${baseUrl}/rest/api/v1/chat`, {
     method: 'POST',
     headers,
-    signal: AbortSignal.timeout(COMPILE_TIMEOUT_MS),
+    signal: requestSignal(COMPILE_TIMEOUT_MS),
     body: JSON.stringify({
       // Not saved as a named chat: these are one-shot compiles, not a
       // conversation the user will come back to.

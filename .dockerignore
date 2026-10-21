@@ -12,3 +12,13 @@ README.md
 Dockerfile
 .dockerignore
 index.html
+
+.next-verify
+*.tsbuildinfo
+.playwright-cli
+output
+docs
+infra
+tools
+AGENTS.md
+.claude

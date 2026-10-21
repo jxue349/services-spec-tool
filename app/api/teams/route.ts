@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiErrorFromUnknown, newRequestId } from '@/lib/errors';
@@ -16,7 +17,7 @@ export const dynamic = 'force-dynamic';
  * `specs/teams.json` only supplies display names, ordering and rule-ID
  * prefixes, so a missing or stale manifest never hides a team that exists.
  */
-export async function GET(): Promise<NextResponse> {
+async function handleGET(): Promise<NextResponse> {
   const requestId = newRequestId();
   try {
     const env = getSpecEnv();
@@ -37,3 +38,5 @@ export async function GET(): Promise<NextResponse> {
     return apiErrorFromUnknown('GET /api/teams', err, requestId);
   }
 }
+
+export const GET = withApiAccess(handleGET, { readOnly: true });

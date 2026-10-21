@@ -27,7 +27,7 @@ the editor, including uncommitted edits.
 ```bash
 cp .env.example .env    # then fill in the values
 npm install
-npm run dev             # http://localhost:3000
+DEV_AUTH_BYPASS=true npm run dev  # local development only, http://localhost:3000
 ```
 
 ### Environment variables
@@ -555,9 +555,26 @@ tests/            unit + mocked-integration tests
   corrective retry when the reply fails schema validation.
 - **Sign-in and attribution.** With `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
   `OIDC_CLIENT_SECRET` and `SESSION_SECRET` set, every write requires a
-  signed-in user and is attributed to them. Without all four the app stays
-  open and attributes to the service account — fine locally, **not** fine on a
-  shared network, and `/api/auth/me` reports which mode it is in.
+  signed-in user and is attributed to them. Normal production startup rejects missing authentication configuration. Spec reads,
+  model calls, and writes require a signed-in user. Local development can
+  explicitly opt out with `DEV_AUTH_BYPASS=true`; production rejects that setting.
+  The temporary `AUTH_MODE=test-readonly` setting permits VPN-only testing without
+  SSO, blocks every repository mutation, and allows startup before integration
+  credentials are added. The UI identifies this mode and missing credentials.
+  See the [deployment runbook](docs/deployment-runbook.md#temporary-testing-without-sso)
+  for secret provisioning, task restart, and restoring SSO.
+  In AWS Secrets Manager, store the Glean token under `GLEAN_TOKEN`; ECS maps
+  that field to the application's `GLEAN_API_KEY` environment variable.
+
+### Deployment from main
+
+After the CI changes are merged, pushes to `main` run the application and
+infrastructure checks, build an AMD64 image, push it to ECR, and update ECS through
+CloudFormation. Deployment uses GitHub OIDC, immutable image digests, an ECR scan
+gate, and task/ALB health verification. Pull requests run checks only.
+The release preserves the deployed authentication, secrets, network, and capacity
+settings. Infrastructure changes use the operator workflow separately.
+See [automatic releases and rollback](docs/deployment-runbook.md#automatic-releases-from-main).
 
 ---
 
@@ -621,3 +638,18 @@ docker run --rm -p 3000:3000 --env-file .env ai-spec-explorer
 The image runs as a non-root user, uses Next's `standalone` output (no build
 tooling at runtime), and contains no secrets — pass them in at run time as
 environment variables or mounted secrets.
+
+### AWS deployment
+
+The approved deployment uses ECS Fargate in the shared account, with company
+network restrictions and JumpCloud sign-in at `https://internal-specs.wyze.com`.
+See [the master plan](docs/deployment-master-plan.md) for phase status and
+[the deployment runbook](docs/deployment-runbook.md) for repeatable commands.
+
+Production requires `APP_BASE_URL`, all OIDC settings, an allowed email domain,
+and a strong shared session secret in addition to GitHub and compiler settings.
+Keep `ALLOW_DIRECT_COMMIT=false`. Runtime secrets are injected by ECS; the image
+build does not require them. API requests have a 120-second total deadline and
+cancel downstream work on expiry or client disconnect. Rate limits are keyed by
+signed-in user and remain local to each process, so replicas do not share a
+single global quota.

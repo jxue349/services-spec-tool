@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    env: { DEV_AUTH_BYPASS: 'true' },
     include: ['tests/**/*.test.ts'],
   },
   resolve: {

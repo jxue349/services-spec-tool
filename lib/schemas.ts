@@ -496,8 +496,10 @@ export type SpecResponse = {
 };
 
 export type MeResponse = {
-  /** False when the deployment has no OIDC configured at all. */
+  /** False when sign-in is unavailable, including temporary test mode. */
   authConfigured: boolean;
+  authMode?: 'oidc' | 'test-readonly' | 'development';
+  integrations?: { github: boolean; compiler: boolean };
   user: { email: string; name: string } | null;
 };
 

@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import type { NextResponse } from 'next/server';
 import { compile } from '@/lib/compiler';
 import { runCompileRoute } from '@/lib/compile-route';
@@ -16,8 +17,10 @@ export const maxDuration = 60;
  * the first that will feel the parent's growth. See the README note on when
  * whole-document prompting stops being viable.
  */
-export function POST(req: Request): Promise<NextResponse> {
+function handlePOST(req: Request): Promise<NextResponse> {
   return runCompileRoute('POST /api/compile/conflicts', req, ConflictRequestSchema, (body) =>
     compile(conflictPrompt(body.parentSpec, body.childSpec, body.childLabel), ConflictReportSchema),
   );
 }
+
+export const POST = withApiAccess(handlePOST, { readOnly: true });

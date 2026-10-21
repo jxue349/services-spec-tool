@@ -1,6 +1,7 @@
 import type { ZodType } from 'zod';
 import { formatIssues } from './json';
 import { SPEC_MAX_BYTES } from './schemas';
+import { requestSignal } from './request-context';
 
 /** Hard cap on request bodies, sized for a 100 KB spec plus JSON overhead. */
 const MAX_BODY_BYTES = SPEC_MAX_BYTES + 32 * 1024;
@@ -22,10 +23,32 @@ export async function readJson<T>(req: Request, schema: ZodType<T>): Promise<T> 
     throw new BadRequestError('Request body is too large.');
   }
 
-  const raw = await req.text();
-  if (new TextEncoder().encode(raw).length > MAX_BODY_BYTES) {
-    throw new BadRequestError('Request body is too large.');
+  const signal = requestSignal() ?? req.signal;
+  signal.throwIfAborted();
+  const reader = req.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  if (reader) {
+    const cancel = () => { void reader.cancel(signal.reason).catch(() => undefined); };
+    signal.addEventListener('abort', cancel, { once: true });
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        signal.throwIfAborted();
+        if (done) break;
+        bytes += value.byteLength;
+        if (bytes > MAX_BODY_BYTES) {
+          await reader.cancel();
+          throw new BadRequestError('Request body is too large.');
+        }
+        chunks.push(value);
+      }
+    } finally {
+      signal.removeEventListener('abort', cancel);
+      reader.releaseLock();
+    }
   }
+  const raw = Buffer.concat(chunks).toString('utf8');
 
   let parsed: unknown;
   try {

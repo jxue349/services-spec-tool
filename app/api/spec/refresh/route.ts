@@ -1,3 +1,4 @@
+import { withApiAccess } from '@/lib/api-access';
 import { NextResponse } from 'next/server';
 import { getSpecEnv } from '@/lib/env';
 import { apiError, apiErrorFromUnknown, newRequestId } from '@/lib/errors';
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic';
  * "Pull latest" — identical to GET /api/spec, exposed as a POST so the button
  * reads as an action and is never served from a cache.
  */
-export async function POST(req: Request): Promise<NextResponse> {
+async function handlePOST(req: Request): Promise<NextResponse> {
   const requestId = newRequestId();
   try {
     const env = getSpecEnv();
@@ -26,3 +27,5 @@ export async function POST(req: Request): Promise<NextResponse> {
     return apiErrorFromUnknown('POST /api/spec/refresh', err, requestId);
   }
 }
+
+export const POST = withApiAccess(handlePOST, { readOnly: true });

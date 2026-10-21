@@ -1,3 +1,5 @@
+import { requestUser } from './request-context';
+import { testReadOnlyMode } from './auth/access';
 /**
  * Dead-simple in-memory sliding-window limiter.
  *
@@ -33,11 +35,10 @@ export function checkRateLimit(key: string, limit: number = DEFAULT_LIMIT, now: 
   return { ok: true };
 }
 
-/** Best-effort client key. Proxy headers are spoofable; see the caveat above. */
-export function clientKey(headers: Headers): string {
-  const forwarded = headers.get('x-forwarded-for');
-  const first = forwarded?.split(',')[0]?.trim();
-  return first || headers.get('x-real-ip') || 'local';
+/** Authenticated users share a key regardless of proxy headers or NAT address. */
+export function clientKey(): string {
+  const user = requestUser();
+  return user ? `user:${user.sub}` : testReadOnlyMode() ? 'shared-readonly-test' : 'local-development';
 }
 
 /** Test-only reset. */
