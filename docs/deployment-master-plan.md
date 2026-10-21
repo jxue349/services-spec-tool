@@ -360,9 +360,9 @@ network resources, the certificate, and the cluster throughout rollback.
 | --- | --- | --- |
 | 0 Plan review | Complete | User approval on 2026-10-21 |
 | 1 Confirm inputs | Complete with tracked dependencies | Account/network/cluster/certificate/quota and GitHub/DNS rules verified; credential and notification dependencies recorded above; cost baseline in runbook |
-| 2 Application preparation | In progress | 383 tests, lint, typecheck, verification build, and standalone startup smoke pass; AMD64 container validation running |
-| 3 Infrastructure and tooling | In progress | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); application, infrastructure and CodeQL CI pass on initial commit; CI hardening findings addressed in revised foundation; new change set pending |
-| 4 Foundation and image | Not started | |
+| 2 Application preparation | Complete | 383 tests, lint, typecheck, verification build, standalone and AMD64 container smoke pass |
+| 3 Infrastructure and tooling | Complete; scanner review tracked | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); application, infrastructure and CodeQL CI pass on initial commit; revised foundation passes local/AWS validation; current CI reruns and documented scanner findings remain visible in PR |
+| 4 Foundation and image | In progress | Revised change set prepared; runtime credentials pending |
 | 5 Service infrastructure checks | Not started | |
 | 6 DNS PR and application | Not started | |
 | 7 Integrations and release | Not started | |
@@ -385,6 +385,10 @@ outputs, test results, and remaining dependencies as execution progresses.
   tooling findings; see the runbook. Final container scan remains required.
 - Browser inspection confirms the sign-in screen loads its assets and calls only
   the minimal auth-status endpoint before login. [Screenshot](deployment-sign-in.png).
+- AMD64 container builds without credentials. At 0.5 vCPU and 1 GiB, it serves
+  health, sign-in HTML, and static assets with 200, rejects protected APIs with
+  401, runs as UID 1001, excludes development tooling, and rejects invalid
+  production startup settings. Real upstream integration is still pending.
 - Initial foundation change set `review-1792606134`: 12 service-owned additions,
   no shared-resource changes. Superseded before execution to add KMS encryption,
   deletion protection, ALB access logs, and security-rule descriptions in response

@@ -68,7 +68,9 @@ def main():
             raise RuntimeError('Unexpected image repository')
         tag = f'{repository}:{commit}'
         print(f'Building {commit} for linux/amd64', flush=True)
-        subprocess.run(['docker', 'buildx', 'build', '--platform', 'linux/amd64', '--load', '-t', tag, '.'], cwd=ROOT, check=True)
+        # Publish one runtime image manifest so the tag/digest refers to the
+        # image scanned by ECR, rather than a provenance-containing image index.
+        subprocess.run(['docker', 'buildx', 'build', '--platform', 'linux/amd64', '--provenance=false', '--load', '-t', tag, '.'], cwd=ROOT, check=True)
         password = run(['aws', 'ecr', 'get-login-password', '--profile', args.profile, '--region', REGION])
         run(['docker', 'login', '--username', 'AWS', '--password-stdin', repository.split('/')[0]], input=password)
         del password
