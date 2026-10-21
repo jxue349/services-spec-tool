@@ -73,6 +73,14 @@ Resources:
                 Condition:
                   StringEquals:
                     aws:RequestedRegion: !Ref AWS::Region
+              - Sid: ValidateExistingSubnetParameters
+                Effect: Allow
+                # CloudFormation calls this for List<AWS::EC2::Subnet::Id>, even with UsePreviousValue.
+                Action: ec2:DescribeSubnets
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
               - Sid: ManageServiceTaskDefinitions
                 Effect: Allow
                 Action:

@@ -58,6 +58,8 @@ The role can publish/scan this ECR repository, manage release change sets for
 task/execution roles. It cannot read Secrets Manager values or modify the
 foundation, IAM roles, DNS, or networking. Registration/inspection APIs that lack
 resource-level scoping have the minimum required wildcard permissions.
+CloudFormation's existing-subnet parameter validation has read-only
+`ec2:DescribeSubnets` permission restricted to `us-west-2`.
 
 Provision or update this role using the administrator profile:
 

@@ -529,6 +529,9 @@ Ask/state-generation checks pass; OIDC and authenticated write acceptance remain
   denials cover service-scoped release permissions and unrelated
   repositories/services, foundation updates, secret-value reads, unrelated role
   passing, IAM role creation, and task registration outside Oregon.
+- CloudTrail confirmed that the image-only change-set plan invokes
+  `ec2:DescribeSubnets` to validate existing subnet parameters. CI grants that
+  read-only action in Oregon; network mutation permissions remain absent.
 - Validation passes: 10 deployment-tool tests, 394 application tests, lint,
   typecheck, build, actionlint, cfn-lint, and all three AWS template validations.
   The new read-only release verifier passes against the current two healthy tasks.
