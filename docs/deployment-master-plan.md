@@ -1,6 +1,6 @@
 # Internal Specs AWS Deployment Master Plan
 
-Status: **Read-only test service running without SSO; DNS PR #49 and provider credentials pending**
+Status: **Read-only test service live without SSO; DNS and GitHub verified; Glean credentials pending**
 
 Prepared: **2026-10-21**
 
@@ -23,8 +23,8 @@ fill in and temporary SSO disablement. Deploy `AuthMode=test-readonly` behind
 the unchanged VPN/office allowlist. Block all repository mutations and OIDC
 login/callback routes; permit spec reads and model calls once credentials are
 configured. The app may start with empty integration fields, explicitly showing
-setup status. The runtime secret now contains a generated session key and empty
-GitHub, Glean, and future OIDC fields. This amendment permits the test service
+setup status. The runtime secret contains a generated session key and a working
+GitHub token; Glean and future OIDC fields remain empty. This amendment permits the test service
 and DNS PR to proceed before JumpCloud setup; full-release criteria below still
 apply when returning to `AuthMode=oidc`.
 
@@ -66,7 +66,7 @@ IDs into this deployment; leave ownership of the network with that stack.
 | Certificate coverage | `*.wyze.com`, issued, renewal eligible; expires 2027-01-27 |
 | Outbound connectivity | Available NAT gateway in each of three AZs; S3 gateway endpoint |
 | DNS ownership | No Route 53 hosted zones in this account; DNSControl repository manages Cloudflare |
-| Selected hostname | Resolver returned `NXDOMAIN`; absent from the inspected local DNS configuration |
+| Selected hostname | Initially unused; now resolves to the dedicated ALB after DNS PR #49 merged on 2026-10-21 |
 
 Use the first two AZs initially. The third remains available for expansion.
 
@@ -99,7 +99,7 @@ flowchart LR
 
 | Connection | Purpose and credentials |
 | --- | --- |
-| GitHub REST API | Read specs/history; create branches, commits, PRs, and issues. Fine-grained service token restricted to the selected repository with Contents, Pull requests, and Issues read/write permissions. |
+| GitHub REST API | Read specs/history; create branches, commits, PRs, and issues. For temporary read-only testing, a fine-grained token restricted to the selected repository needs Contents read-only. Full authenticated operation needs Contents, Pull requests, and Issues read/write permissions. |
 | Glean Chat API | Compile supplied specs and answer questions. Use OAuth client credentials or an API token, never both. Validate the configured spec-only agent in the actual tenant. |
 | JumpCloud OIDC | Employee authentication and change attribution. Requires application assignment, issuer, client ID/secret, and the exact callback URI. |
 | ECR, Secrets Manager, CloudWatch | Image pull, secret injection, and application logs through the ECS execution role. |
@@ -191,11 +191,11 @@ while resolving these dependencies, but do not launch with placeholder values.
 | Individual service owner and Wyze email for DNS ownership | Default to current operator `cxu@wyze.com`; parameterized |
 | Current approved VPN/office egress CIDRs | Verified six US VPN/office `/32` rules against the existing roadmap ALB; recorded in `infra/foundation.yaml`. Overseas access remains outside the initial baseline. |
 | JumpCloud application, permitted assignees, issuer, and credentials | Required before enabling normal authenticated operation; deferred for the authorized read-only test phase |
-| GitHub service token and confirmation of repository access | Secure location requested from user; required before service launch. Operator GitHub CLI access works and is not the runtime credential. |
-| Glean credential and successful spec-only agent call | Secure location requested from user; required before service launch and tenant validation |
+| GitHub service token and confirmation of repository access | User populated the runtime secret; ECS tasks replaced and real spec reads, listing, teams, and history verified on 2026-10-21. Write permissions remain untested. |
+| Glean credential and successful spec-only agent call | Runtime fields remain empty; required before AI testing and tenant validation |
 | Approved sandbox repository and separately scoped test credentials | Requested from user; required before write-path acceptance |
 | Existing operational alert destination | User/service owner to supply before notification acceptance; the account contains only an unrelated staging SNS topic, which was not reused |
-| DNS code-owner review and production environment approval | Required by the DNS repository after the healthy-service checks |
+| DNS code-owner review and production environment approval | PR #49 merged on 2026-10-21; DNS resolution and HTTPS at the final hostname verified |
 
 The DNS repository's existing process requires another code owner's review and
 the `dns-production` environment approval. This plan does not replace those
@@ -374,8 +374,8 @@ network resources, the certificate, and the cluster throughout rollback.
 | 3 Infrastructure and tooling | Complete; advisory review tracked | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); CI checks pass on release `247140b`; scanner dispositions are recorded in the runbook |
 | 4 Foundation and image | Complete for test deployment | Test-mode image `247140b` published and scanned: zero ECR OS findings; encrypted runtime secret initialized |
 | 5 Service infrastructure checks | Test service verified | CREATE_COMPLETE; two healthy targets in private subnets across two AZs; HTTPS 200; writes/OIDC 403; non-allowlisted network probe blocked |
-| 6 DNS PR and application | PR opened; review/apply pending | [DNS PR #49](https://github.com/wyzelabs-inc/wyze-dns-config/pull/49); one CNAME addition, TTL 300, proxy disabled; required code-owner review and dns-production approval remain |
-| 7 Integrations and release | Waiting for credentials, DNS, and sandbox inputs | User will populate GitHub/Glean fields; JumpCloud deferred for test mode. Real provider calls, authenticated sandbox writes, replacement/rollback, and observation remain pending |
+| 6 DNS PR and application | Complete | [DNS PR #49](https://github.com/wyzelabs-inc/wyze-dns-config/pull/49) merged at 20:14 UTC on 2026-10-21; final hostname resolves to the ALB and HTTPS works |
+| 7 Integrations and release | GitHub reads verified; remaining acceptance pending | Real spec reads/listing, teams, and history pass after secret refresh and healthy rolling replacement. Glean credentials, JumpCloud, authenticated sandbox writes, failed-rollout recovery, and observation remain pending |
 
 Approval record: **Approved by the user on 2026-10-21: “looks good, let get start.”** Update each phase with its commit/PR, relevant AWS
 outputs, test results, and remaining dependencies as execution progresses.
@@ -408,7 +408,8 @@ outputs, test results, and remaining dependencies as execution progresses.
 - AMD64 container builds without credentials. At 0.5 vCPU and 1 GiB, it serves
   health, sign-in HTML, and static assets with 200, rejects protected APIs with
   401, runs as UID 1001, excludes development tooling, and rejects invalid
-  production startup settings. Real upstream integration is still pending.
+  production startup settings. Subsequent live GitHub checks are recorded below;
+  Glean integration remains pending.
 - Initial foundation change set `review-1792606134`: 12 service-owned additions,
   no shared-resource changes. Superseded before execution to add KMS encryption,
   deletion protection, ALB access logs, and security-rule descriptions in response
@@ -423,7 +424,7 @@ outputs, test results, and remaining dependencies as execution progresses.
 | Drift check | `IN_SYNC`, zero drifted resources |
 | ALB resource name | `wyze-internal-specs` (AWS reserves the `internal-` name prefix) |
 | ALB DNS target | `wyze-internal-specs-1589150793.us-west-2.elb.amazonaws.com` |
-| Runtime secret | `/internal-specs/prod/runtime`; ARN suffix `runtime-eddM1Z`; generated session key; other credential fields empty pending user input |
+| Runtime secret | `/internal-specs/prod/runtime`; ARN suffix `runtime-eddM1Z`; generated session key and user-provided GitHub token; Glean/OIDC fields empty |
 | Application logs | `/ecs/internal-specs`, 30-day retention, service KMS key |
 | ALB access logs | `internal-specs-alb-logs-012619468172-us-west-2`, 30-day expiry; log-delivery test file verified |
 | Deployed application commit | `247140b91812fa42ce183e149e98c77d3c80557d` |
@@ -433,14 +434,15 @@ outputs, test results, and remaining dependencies as execution progresses.
 AWS checks verified the exact six allowed ingress CIDRs, HTTPS-only listener,
 ALB-to-task security-group isolation, KMS encryption/rotation, log delivery,
 and scoped secret access. IAM simulation permits the execution role to read
-this service's secret and denies an unrelated secret. Both running tasks have now retrieved the configured secret fields successfully.
-Actual GitHub/Glean calls await provider credentials and a task restart.
+this service's secret and denies an unrelated secret. Both running tasks have retrieved the configured secret fields successfully.
+GitHub reads now pass with the user-provided token after task replacement;
+Glean calls await credentials and another task restart.
 
 A client connection override preserving `internal-specs.wyze.com` validates TLS
 and reaches the ALB. The service now returns 200 for the workspace, health, and auth-status endpoints.
 All six repository mutation APIs and OIDC login/callback return 403; an incorrect
-POST origin returns 403 and an unexpected Host header returns 404. Public DNS
-remains unpublished pending PR #49 and the repository approval workflow.
+POST origin returns 403 and an unexpected Host header returns 404. DNS PR #49
+has merged, and the final hostname now resolves and serves HTTPS successfully.
 
 Provisioning recovered from two AWS validation failures: a reserved ALB name and
 an overly restrictive log-delivery policy. The five retained service resources
@@ -452,8 +454,8 @@ network, cluster, certificate, or existing application resources were changed.
 The deployed image was built and tested from `247140b`; subsequent documentation
 commits record evidence and do not change that image. Application, infrastructure,
 CodeQL, secret-scanning, and both Lacework checks pass for that commit. Wiz
-advisory findings remain visible in PR #1. No real GitHub/Glean/OIDC
-integration success is claimed.
+advisory findings remain visible in PR #1. Real GitHub read integration now
+passes; Glean, OIDC, and authenticated write acceptance remain pending.
 
 ### Read-only test deployment evidence
 
@@ -464,9 +466,15 @@ integration success is claimed.
   task ENI has a public IP, and both use only the service task security group.
 - Runtime flags: `AUTH_MODE=test-readonly`, `DEV_AUTH_BYPASS=false`,
   `ALLOW_DIRECT_COMMIT=false`, `GleanCredentialMode=auto`.
-- Runtime auth status confirms no authenticated identity and no configured
-  GitHub/Glean credentials loaded yet. Keys are edited in Secrets Manager; ECS
-  must replace tasks after a secret update. See the runbook command.
+- Runtime auth status confirms no authenticated identity, GitHub configured,
+  and Glean unconfigured. Keys are edited in Secrets Manager; ECS must replace
+  tasks after a secret update. See the runbook command.
+- After the user added the GitHub token, forced deployment
+  `ecs-svc/7590560494919862606` reached service stability with two healthy targets
+  across two AZs, retaining task definition `internal-specs:1` and the same image.
+  Live HTTPS checks returned 200 for the parent spec (76,489 bytes), seven specs,
+  five teams, and one history entry. Direct commits remain disabled. No repository
+  writes were attempted; token values and spec contents were not logged.
 - A one-off Fargate probe used NAT egress outside all six allowed source CIDRs.
   DNS and a control HTTPS request to AWS STS succeeded; ALB connection timed out.
   The probe exited successfully and its task is STOPPED. This verifies denial
@@ -474,8 +482,9 @@ integration success is claimed.
 - DNS PR #49 CI preview passes and shows exactly one correction: create
   `internal-specs.wyze.com`, TTL 300, `proxy=false`, with the approved ALB target
   and individual owner comment. No other records change. Existing TTL warnings
-  remain unrelated to this addition. Code-owner review and the production
-  environment approval are still required; no DNS apply has been performed.
+  remain unrelated to this addition. PR #49 subsequently merged at
+  `2026-10-21T20:14:17Z`; the final hostname resolves to the intended ALB and the
+  live health and GitHub read endpoints return 200 with valid TLS.
 
 ## References
 
