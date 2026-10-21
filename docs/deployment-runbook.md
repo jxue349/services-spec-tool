@@ -101,7 +101,11 @@ Mermaid/KaTeX path and no moderate, high, or critical findings. The full audit
 also includes development-tool findings in the Vitest and Tailwind toolchains;
 those require a separate compatible toolchain upgrade. The standalone runtime
 excludes development tools. CI gates production npm findings at high severity;
-the container scan separately covers the final runtime image and OS packages.
+the [ECR basic scan](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-basic.html)
+separately covers OS packages in the final runtime image. JavaScript dependency
+findings come from npm audit. The runtime installs Alpine's patched
+`zlib>=1.3.2-r1` for CVE-2026-85091; the upstream Node base image initially carried
+the affected `1.3.2-r0` package.
 
 ## Deploy the service
 

@@ -76,7 +76,16 @@ def main():
         del password
         subprocess.run(['docker', 'push', tag], cwd=ROOT, check=True)
         print('Waiting for ECR scan results', flush=True)
-        aws('ecr', 'wait', 'image-scan-complete', '--repository-name', PREFIX, '--image-id', f'imageTag={commit}')
+        # Scan-on-push registration can lag the completed upload. The AWS waiter
+        # treats ScanNotFoundException as terminal, so retry that transient case.
+        for attempt in range(12):
+            try:
+                aws('ecr', 'wait', 'image-scan-complete', '--repository-name', PREFIX, '--image-id', f'imageTag={commit}')
+                break
+            except RuntimeError as error:
+                if 'ScanNotFoundException' not in str(error) or attempt == 11:
+                    raise
+                time.sleep(5)
         scan = aws('ecr', 'describe-image-scan-findings', '--repository-name', PREFIX, '--image-id', f'imageTag={commit}')
         print(json.dumps({'image': f"{repository}@{scan['imageId']['imageDigest']}", 'scan': scan.get('imageScanStatus'), 'findings': scan.get('imageScanFindings', {}).get('findingSeverityCounts', {})}, indent=2))
         return

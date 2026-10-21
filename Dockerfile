@@ -29,8 +29,10 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     KEEP_ALIVE_TIMEOUT=185000
 
+# Patch CVE-2026-85091 until the Node base image includes the Alpine zlib fix.
 # Run as a non-root user with no shell.
-RUN addgroup --system --gid 1001 nodejs \
+RUN apk add --no-cache --upgrade 'zlib>=1.3.2-r1' \
+ && addgroup --system --gid 1001 nodejs \
  && adduser --system --uid 1001 --ingroup nodejs --shell /sbin/nologin nextjs
 
 # `output: 'standalone'` emits a self-contained server plus a minimal
