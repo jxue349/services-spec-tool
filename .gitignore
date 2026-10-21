@@ -24,3 +24,5 @@ next-env.d.ts
 
 # Python deployment tooling
 __pycache__/
+.playwright-cli/
+output/playwright/

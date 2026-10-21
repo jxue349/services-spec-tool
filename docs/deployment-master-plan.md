@@ -98,6 +98,7 @@ flowchart LR
 There are no direct Confluence, Jira, or Slack integrations. If enabled later,
 Glean's company-knowledge lookup accesses those sources through Glean. There is
 no RDS, DynamoDB, Redis, vector database, EFS, or application S3 bucket to create.
+An operational S3 bucket stores ALB access logs with a 30-day expiry.
 Editor drafts remain browser state until checked in. Sessions use signed cookies
 and a common signing secret across tasks; sticky sessions are unnecessary.
 
@@ -106,7 +107,9 @@ and a common signing secret across tasks; sticky sessions are unnecessary.
 Use `internal-specs` as the service/resource name prefix and
 `/internal-specs/prod` as the secret-name prefix. Create a dedicated ALB, target
 group, task security group, execution role, task role, ECR repository, service,
-and log group. Reuse the cluster, network, NAT gateways, and ACM certificate.
+and log group. A rotating service KMS key protects the runtime secret, application
+logs, and ECR images; ALB access logs use a private S3 bucket. Reuse the cluster,
+network, NAT gateways, and ACM certificate.
 
 | Setting | Initial value |
 | --- | --- |
@@ -358,7 +361,7 @@ network resources, the certificate, and the cluster throughout rollback.
 | 0 Plan review | Complete | User approval on 2026-10-21 |
 | 1 Confirm inputs | Complete with tracked dependencies | Account/network/cluster/certificate/quota and GitHub/DNS rules verified; credential and notification dependencies recorded above; cost baseline in runbook |
 | 2 Application preparation | In progress | 383 tests, lint, typecheck, verification build, and standalone startup smoke pass; AMD64 container validation running |
-| 3 Infrastructure and tooling | In progress | Both templates pass cfn-lint and AWS validation; account-checked CLI and CI added; foundation change set contains 12 additions only; PR pending container check |
+| 3 Infrastructure and tooling | In progress | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); application, infrastructure and CodeQL CI pass on initial commit; CI hardening findings addressed in revised foundation; new change set pending |
 | 4 Foundation and image | Not started | |
 | 5 Service infrastructure checks | Not started | |
 | 6 DNS PR and application | Not started | |
@@ -380,8 +383,12 @@ outputs, test results, and remaining dependencies as execution progresses.
 - Production dependency audit: zero critical/high/moderate, two low findings
   in the Mermaid/KaTeX dependency path. Full development audit has additional
   tooling findings; see the runbook. Final container scan remains required.
-- Foundation change set `review-1792606134`: 12 service-owned resource additions,
-  no shared-resource modifications or replacements. Not yet executed.
+- Browser inspection confirms the sign-in screen loads its assets and calls only
+  the minimal auth-status endpoint before login. [Screenshot](deployment-sign-in.png).
+- Initial foundation change set `review-1792606134`: 12 service-owned additions,
+  no shared-resource changes. Superseded before execution to add KMS encryption,
+  deletion protection, ALB access logs, and security-rule descriptions in response
+  to CI findings. The revised template contains 16 service-owned resources.
 
 ## References
 

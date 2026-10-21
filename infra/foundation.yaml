@@ -19,6 +19,13 @@ Parameters:
     Type: String
     Description: Service hostname
     Default: internal-specs.wyze.com
+  DeletionProtection:
+    Type: String
+    Description: Disable only during deliberate service retirement
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
   AllowedCidr1:
     Type: String
     Description: Approved company VPN or office egress
@@ -50,6 +57,119 @@ Parameters:
     Default: 4.53.144.62/32
     AllowedPattern: ^(?:\d{1,3}\.){3}\d{1,3}/32$
 Resources:
+  EncryptionKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Internal Specs runtime secret, application logs, and images
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableAccountIAM
+            Effect: Allow
+            Principal:
+              AWS:
+                Fn::Sub: arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+          - Sid: EncryptServiceLogs
+            Effect: Allow
+            Principal:
+              Service:
+                Fn::Sub: logs.${AWS::Region}.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn:
+                  Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/internal-specs
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+  EncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/internal-specs/prod
+      TargetKeyId:
+        Ref: EncryptionKey
+  AccessLogBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName:
+        Fn::Sub: internal-specs-alb-logs-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireAccessLogs
+            Status: Enabled
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      Tags:
+        - Key: Service
+          Value: internal-specs
+        - Key: Owner
+          Value:
+            Ref: OwnerEmail
+  AccessLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: AccessLogBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DeliverALBLogs
+            Effect: Allow
+            Principal:
+              Service: logdelivery.elasticloadbalancing.amazonaws.com
+            Action: s3:PutObject
+            Resource:
+              Fn::Sub: ${AccessLogBucket.Arn}/alb/AWSLogs/${AWS::AccountId}/*
+            Condition:
+              ArnLike:
+                aws:SourceArn:
+                  Fn::Sub: >-
+                    arn:${AWS::Partition}:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/internal-specs/*
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - Fn::GetAtt:
+                  - AccessLogBucket
+                  - Arn
+              - Fn::Sub: ${AccessLogBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
   Repository:
     Type: AWS::ECR::Repository
     Properties:
@@ -58,7 +178,11 @@ Resources:
       ImageScanningConfiguration:
         ScanOnPush: true
       EncryptionConfiguration:
-        EncryptionType: AES256
+        EncryptionType: KMS
+        KmsKey:
+          Fn::GetAtt:
+            - EncryptionKey
+            - Arn
       Tags:
         - Key: Service
           Value: internal-specs
@@ -72,6 +196,10 @@ Resources:
     Properties:
       Name: /internal-specs/prod/runtime
       Description: Populate securely before deploying the service; JSON keys are documented in the runbook.
+      KmsKeyId:
+        Fn::GetAtt:
+          - EncryptionKey
+          - Arn
       Tags:
         - Key: Service
           Value: internal-specs
@@ -85,6 +213,10 @@ Resources:
     Properties:
       LogGroupName: /ecs/internal-specs
       RetentionInDays: 30
+      KmsKeyId:
+        Fn::GetAtt:
+          - EncryptionKey
+          - Arn
       Tags:
         - Key: Service
           Value: internal-specs
@@ -105,37 +237,44 @@ Resources:
           ToPort: 443
           CidrIp:
             Ref: AllowedCidr1
+          Description: US company VPN HTTPS
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
           CidrIp:
             Ref: AllowedCidr2
+          Description: US company VPN HTTPS
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
           CidrIp:
             Ref: AllowedCidr3
+          Description: US company VPN HTTPS
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
           CidrIp:
             Ref: AllowedCidr4
+          Description: US company VPN HTTPS
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
           CidrIp:
             Ref: AllowedCidr5
+          Description: US company VPN HTTPS
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
           CidrIp:
             Ref: AllowedCidr6
+          Description: US office HTTPS
       SecurityGroupEgress:
         - IpProtocol: tcp
           FromPort: 3000
           ToPort: 3000
           DestinationSecurityGroupId:
             Ref: TaskSecurityGroup
+          Description: Application and health checks to the service tasks
       Tags:
         - Key: Service
           Value: internal-specs
@@ -153,6 +292,7 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
+          Description: HTTPS to GitHub, Glean, JumpCloud and AWS through existing NAT
       Tags:
         - Key: Service
           Value: internal-specs
@@ -161,6 +301,7 @@ Resources:
             Ref: OwnerEmail
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: AccessLogBucketPolicy
     Properties:
       Name: internal-specs
       Type: application
@@ -171,6 +312,16 @@ Resources:
       SecurityGroups:
         - Ref: AlbSecurityGroup
       LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value:
+            Ref: DeletionProtection
+        - Key: access_logs.s3.enabled
+          Value: 'true'
+        - Key: access_logs.s3.bucket
+          Value:
+            Ref: AccessLogBucket
+        - Key: access_logs.s3.prefix
+          Value: alb
         - Key: idle_timeout.timeout_seconds
           Value: '180'
         - Key: routing.http.drop_invalid_header_fields.enabled
@@ -279,6 +430,18 @@ Resources:
                   - secretsmanager:GetSecretValue
                 Resource:
                   Ref: RuntimeSecret
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource:
+                  Fn::GetAtt:
+                    - EncryptionKey
+                    - Arn
+                Condition:
+                  StringEquals:
+                    kms:ViaService:
+                      Fn::Sub: secretsmanager.${AWS::Region}.amazonaws.com
+                    kms:EncryptionContext:SecretARN:
+                      Ref: RuntimeSecret
       Tags:
         - Key: Service
           Value: internal-specs
@@ -311,7 +474,16 @@ Resources:
       ToPort: 3000
       SourceSecurityGroupId:
         Ref: AlbSecurityGroup
+      Description: Application and health-check traffic from the service ALB
 Outputs:
+  EncryptionKeyArn:
+    Value:
+      Fn::GetAtt:
+        - EncryptionKey
+        - Arn
+  AccessLogBucketName:
+    Value:
+      Ref: AccessLogBucket
   RepositoryUri:
     Value:
       Fn::GetAtt:

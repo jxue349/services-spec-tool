@@ -43,8 +43,15 @@ python3 tools/deploy.py status foundation
 
 Wait for `CREATE_COMPLETE` or `UPDATE_COMPLETE`. The stack outputs include the
 ECR URI, ALB hostname, roles, target group, and runtime secret ARN. The repository,
-secret, and log group are retained if the stack is deleted. They are service
-resources and require deliberate cleanup separately.
+secret, KMS key, log group, and access-log bucket are retained if the stack is
+deleted. They require deliberate cleanup separately. The KMS key rotates annually
+and protects the runtime secret, application logs, and image repository.
+
+The private access-log bucket expires objects after 30 days. It uses SSE-S3,
+the encryption mode supported by [ALB log delivery](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html).
+Its policy permits only this account's named ALB and rejects non-TLS access.
+Restrict operator access: ALB request URLs can contain OIDC callback codes and
+state values. Application log redaction does not redact ALB URLs.
 
 ## Provision credentials securely
 
@@ -156,7 +163,8 @@ revision exists on the first launch. A failed first release can be held at
 
 Revert unintended specification changes through a GitHub PR; infrastructure
 rollback does not revert Git history. Remove DNS through its PR workflow and
-verify removal before deleting the ALB. Preserve shared network resources, the
+verify removal before deleting the ALB. Deliberately update the foundation's
+`DeletionProtection` parameter to `false` before stack retirement. Preserve shared network resources, the
 cluster, and the certificate. Record and clean up retained service resources
 separately when the service is retired.
 
@@ -170,9 +178,32 @@ using 730 hours/month:
 | Two tasks totaling 1 vCPU at $0.04048/hour and 2 GiB at $0.004445/GiB-hour | $36.04 |
 | One ALB at $0.0225/hour | $16.43 |
 | Two public IPv4 addresses at $0.005/address-hour | $7.30 |
-| Total before usage charges | $59.77 |
+| One customer-managed KMS key, before rotations | $1.00 |
+| Total before usage charges | $60.77 |
 
 This excludes ALB capacity units, NAT traffic, data transfer, logs, image storage,
-secrets, and Glean charges. Additional load balancer IPs can increase the IPv4
+secrets, KMS requests, access-log storage, and Glean charges. Additional load balancer IPs can increase the IPv4
 line. Existing NAT hourly charges are shared costs. See [Fargate pricing](https://aws.amazon.com/fargate/pricing/)
-and [ELB pricing](https://aws.amazon.com/elasticloadbalancing/pricing/).
+and [ELB pricing](https://aws.amazon.com/elasticloadbalancing/pricing/). The first
+two KMS rotations each add $1/month under [KMS pricing](https://aws.amazon.com/kms/pricing/).
+
+## Infrastructure scanner findings
+
+The initial PR scan identified missing KMS configuration, deletion protection,
+ALB access logging, and security-rule descriptions. The foundation now includes
+those controls. Initial Wiz output also reports medium/low informational findings
+without per-rule details through the GitHub API; its linked report remains part
+of release review. Recheck scanner results for each revised commit.
+
+The following configuration is intentional and remains visible to reviewers:
+
+- An internet-facing ALB is required because this VPC uses public company VPN
+  egress addresses; its security group permits only six verified `/32` sources
+  on 443. Private tasks cannot accept traffic directly from the internet.
+- Task outbound 443 allows GitHub, Glean, JumpCloud, and AWS endpoints with
+  changing addresses through existing NAT. A firewall or egress proxy would be
+  required for domain-level restrictions and is outside this release.
+- Logs retain 30 days, matching the approved baseline. A scanner recommendation
+  of one year is not the configured retention policy.
+- The ALB log bucket uses SSE-S3 as required by AWS log delivery; other persistent
+  service resources use the rotating customer-managed KMS key.
