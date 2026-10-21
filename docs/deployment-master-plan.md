@@ -1,6 +1,6 @@
 # Internal Specs AWS Deployment Master Plan
 
-Status: **Read-only test service live without SSO; DNS and GitHub verified; Glean credentials pending**
+Status: **Read-only test service live without SSO; DNS, GitHub reads, and Glean Ask/state generation verified**
 
 Prepared: **2026-10-21**
 
@@ -24,7 +24,7 @@ the unchanged VPN/office allowlist. Block all repository mutations and OIDC
 login/callback routes; permit spec reads and model calls once credentials are
 configured. The app may start with empty integration fields, explicitly showing
 setup status. The runtime secret contains a generated session key and a working
-GitHub token; Glean and future OIDC fields remain empty. This amendment permits the test service
+GitHub token and Glean token; future OIDC fields remain empty. This amendment permits the test service
 and DNS PR to proceed before JumpCloud setup; full-release criteria below still
 apply when returning to `AuthMode=oidc`.
 
@@ -163,7 +163,7 @@ credentials rather than embedding the local administrator profile in CI.
 | `AWS_REGION` | `us-west-2` |
 | `COMPILER_PROVIDER` | `glean` |
 | `GLEAN_INSTANCE` | `wyze` |
-| `GLEAN_AGENT` | Existing spec-only `GPT` setting, subject to successful tenant validation |
+| `GLEAN_AGENT` | Spec-only `GPT`; direct Chat API and live Ask/state-generation checks pass |
 | `GLEAN_COMPANY_KNOWLEDGE` | `false` |
 | `GITHUB_OWNER` / `GITHUB_REPO` | `wyzelabs-inc` / `KB-Spec-explorer` |
 | `SPEC_ROOT` / `SPEC_DEFAULT_TEAM` | `specs` / `services` |
@@ -172,6 +172,7 @@ credentials rather than embedding the local administrator profile in CI.
 | `OIDC_ALLOWED_EMAIL_DOMAINS` | `wyze.com`, combined with restricted JumpCloud application assignment |
 | `OIDC_ISSUER` / `OIDC_CLIENT_ID` | From the service's JumpCloud application |
 | Secret values | `GITHUB_TOKEN`, `OIDC_CLIENT_SECRET`, `SESSION_SECRET`, and the chosen Glean credential |
+| Glean token secret mapping | Secrets Manager field `GLEAN_TOKEN` is injected as application environment variable `GLEAN_API_KEY`; the older empty `GLEAN_API_KEY` secret field is unused |
 
 Register `https://internal-specs.wyze.com/api/auth/callback` with JumpCloud.
 Generate a strong session secret of at least 32 random bytes and keep the same
@@ -192,7 +193,7 @@ while resolving these dependencies, but do not launch with placeholder values.
 | Current approved VPN/office egress CIDRs | Verified six US VPN/office `/32` rules against the existing roadmap ALB; recorded in `infra/foundation.yaml`. Overseas access remains outside the initial baseline. |
 | JumpCloud application, permitted assignees, issuer, and credentials | Required before enabling normal authenticated operation; deferred for the authorized read-only test phase |
 | GitHub service token and confirmation of repository access | User populated the runtime secret; ECS tasks replaced and real spec reads, listing, teams, and history verified on 2026-10-21. Write permissions remain untested. |
-| Glean credential and successful spec-only agent call | Runtime fields remain empty; required before AI testing and tenant validation |
+| Glean credential and successful spec-only agent call | User populated `GLEAN_TOKEN`; direct Chat API, live Ask with three rule citations, and state generation pass on 2026-10-21 |
 | Approved sandbox repository and separately scoped test credentials | Requested from user; required before write-path acceptance |
 | Existing operational alert destination | User/service owner to supply before notification acceptance; the account contains only an unrelated staging SNS topic, which was not reused |
 | DNS code-owner review and production environment approval | PR #49 merged on 2026-10-21; DNS resolution and HTTPS at the final hostname verified |
@@ -373,9 +374,9 @@ network resources, the certificate, and the cluster throughout rollback.
 | 2 Application preparation | Complete | 394 tests, lint, typecheck, verification build, standalone and AMD64 container smoke pass |
 | 3 Infrastructure and tooling | Complete; advisory review tracked | [Draft PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1); CI checks pass on release `247140b`; scanner dispositions are recorded in the runbook |
 | 4 Foundation and image | Complete for test deployment | Test-mode image `247140b` published and scanned: zero ECR OS findings; encrypted runtime secret initialized |
-| 5 Service infrastructure checks | Test service verified | CREATE_COMPLETE; two healthy targets in private subnets across two AZs; HTTPS 200; writes/OIDC 403; non-allowlisted network probe blocked |
+| 5 Service infrastructure checks | Test service verified | UPDATE_COMPLETE after Glean secret mapping; two healthy targets across two AZs; private task networking, HTTPS 200, writes/OIDC 403, and non-allowlisted network denial verified |
 | 6 DNS PR and application | Complete | [DNS PR #49](https://github.com/wyzelabs-inc/wyze-dns-config/pull/49) merged at 20:14 UTC on 2026-10-21; final hostname resolves to the ALB and HTTPS works |
-| 7 Integrations and release | GitHub reads verified; remaining acceptance pending | Real spec reads/listing, teams, and history pass after secret refresh and healthy rolling replacement. Glean credentials, JumpCloud, authenticated sandbox writes, failed-rollout recovery, and observation remain pending |
+| 7 Integrations and release | GitHub reads and Glean Ask/state generation verified; remaining acceptance pending | Real spec reads/listing, teams, history, Ask with citations, and state generation pass after healthy rolling replacement. JumpCloud, authenticated sandbox writes, remaining feature acceptance, failed-rollout recovery, and observation remain pending |
 
 Approval record: **Approved by the user on 2026-10-21: “looks good, let get start.”** Update each phase with its commit/PR, relevant AWS
 outputs, test results, and remaining dependencies as execution progresses.
@@ -408,8 +409,8 @@ outputs, test results, and remaining dependencies as execution progresses.
 - AMD64 container builds without credentials. At 0.5 vCPU and 1 GiB, it serves
   health, sign-in HTML, and static assets with 200, rejects protected APIs with
   401, runs as UID 1001, excludes development tooling, and rejects invalid
-  production startup settings. Subsequent live GitHub checks are recorded below;
-  Glean integration remains pending.
+  production startup settings. Subsequent live GitHub and Glean checks are
+  recorded below.
 - Initial foundation change set `review-1792606134`: 12 service-owned additions,
   no shared-resource changes. Superseded before execution to add KMS encryption,
   deletion protection, ALB access logs, and security-rule descriptions in response
@@ -424,7 +425,7 @@ outputs, test results, and remaining dependencies as execution progresses.
 | Drift check | `IN_SYNC`, zero drifted resources |
 | ALB resource name | `wyze-internal-specs` (AWS reserves the `internal-` name prefix) |
 | ALB DNS target | `wyze-internal-specs-1589150793.us-west-2.elb.amazonaws.com` |
-| Runtime secret | `/internal-specs/prod/runtime`; ARN suffix `runtime-eddM1Z`; generated session key and user-provided GitHub token; Glean/OIDC fields empty |
+| Runtime secret | `/internal-specs/prod/runtime`; ARN suffix `runtime-eddM1Z`; generated session key and user-provided `GITHUB_TOKEN`/`GLEAN_TOKEN`; Glean OAuth/OIDC fields empty |
 | Application logs | `/ecs/internal-specs`, 30-day retention, service KMS key |
 | ALB access logs | `internal-specs-alb-logs-012619468172-us-west-2`, 30-day expiry; log-delivery test file verified |
 | Deployed application commit | `247140b91812fa42ce183e149e98c77d3c80557d` |
@@ -435,8 +436,8 @@ AWS checks verified the exact six allowed ingress CIDRs, HTTPS-only listener,
 ALB-to-task security-group isolation, KMS encryption/rotation, log delivery,
 and scoped secret access. IAM simulation permits the execution role to read
 this service's secret and denies an unrelated secret. Both running tasks have retrieved the configured secret fields successfully.
-GitHub reads now pass with the user-provided token after task replacement;
-Glean calls await credentials and another task restart.
+GitHub reads and Glean Ask/state generation pass with the user-provided tokens
+after task replacement.
 
 A client connection override preserving `internal-specs.wyze.com` validates TLS
 and reaches the ALB. The service now returns 200 for the workspace, health, and auth-status endpoints.
@@ -454,20 +455,21 @@ network, cluster, certificate, or existing application resources were changed.
 The deployed image was built and tested from `247140b`; subsequent documentation
 commits record evidence and do not change that image. Application, infrastructure,
 CodeQL, secret-scanning, and both Lacework checks pass for that commit. Wiz
-advisory findings remain visible in PR #1. Real GitHub read integration now
-passes; Glean, OIDC, and authenticated write acceptance remain pending.
+advisory findings remain visible in PR #1. Real GitHub reads and Glean
+Ask/state-generation checks pass; OIDC and authenticated write acceptance remain pending.
 
 ### Read-only test deployment evidence
 
-- Service stack `internal-specs-service`: `CREATE_COMPLETE`, seven additions,
-  change set `review-1792613181`. No shared resources changed.
-- Task definition `internal-specs:1`, desired/running count 2, rollout completed.
+- Service stack `internal-specs-service`: initially created with seven additions
+  by change set `review-1792613181`; now `UPDATE_COMPLETE` after the Glean mapping
+  update described below. No shared resources changed.
+- Task definition `internal-specs:2`, desired/running count 2, rollout completed.
   Both tasks and ALB targets are healthy in `us-west-2a` and `us-west-2b`; neither
   task ENI has a public IP, and both use only the service task security group.
 - Runtime flags: `AUTH_MODE=test-readonly`, `DEV_AUTH_BYPASS=false`,
   `ALLOW_DIRECT_COMMIT=false`, `GleanCredentialMode=auto`.
-- Runtime auth status confirms no authenticated identity, GitHub configured,
-  and Glean unconfigured. Keys are edited in Secrets Manager; ECS must replace
+- Runtime auth status confirms no authenticated identity and both GitHub and
+  Glean configured. Keys are edited in Secrets Manager; ECS must replace
   tasks after a secret update. See the runbook command.
 - After the user added the GitHub token, forced deployment
   `ecs-svc/7590560494919862606` reached service stability with two healthy targets
@@ -475,6 +477,19 @@ passes; Glean, OIDC, and authenticated write acceptance remain pending.
   Live HTTPS checks returned 200 for the parent spec (76,489 bytes), seven specs,
   five teams, and one history entry. Direct commits remain disabled. No repository
   writes were attempted; token values and spec contents were not logged.
+- After the user added `GLEAN_TOKEN`, commit `cfecec6` updated the ECS secret
+  mapping and deployment preflight. Change set `review-1792616311` replaced only
+  the task definition and updated the service to revision 2, retaining the same
+  image. Rollout `ecs-svc/4642973847802633215` completed with two healthy targets.
+  Local checks pass: 394 application tests, lint, typecheck, build, three secret
+  preflight tests, cfn-lint, and AWS template validation. Application,
+  infrastructure, CodeQL, and secret-scanning CI checks pass on that commit.
+- Live Glean acceptance: `/api/ask` returned 200 in 11.95 seconds for a real
+  specification question, with three rule citations and high reported confidence.
+  `/api/compile/states` returned 200 in 5.95 seconds for a synthetic fixture,
+  producing two states and two transitions with the expected rule citation.
+  Company-knowledge lookup remains disabled. These checks do not claim full
+  acceptance of every AI feature or authenticated write workflow.
 - A one-off Fargate probe used NAT egress outside all six allowed source CIDRs.
   DNS and a control HTTPS request to AWS STS succeeded; ALB connection timed out.
   The probe exited successfully and its task is STOPPED. This verifies denial
