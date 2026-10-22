@@ -6,6 +6,7 @@ import { followersPathFor, parseFollowers } from '@/lib/followers';
 import { SpecNotFoundError, createSpecRepoClient } from '@/lib/github';
 import { BadRequestError, readJson } from '@/lib/http';
 import { NotSignedInError, requireWriteIdentity } from '@/lib/auth/require-user';
+import { markdownTableCode, markdownTableText } from '@/lib/markdown-table';
 import { appendAdditions } from '@/lib/merge-additions';
 import { resolveSpecPathValue } from '@/lib/resolve-spec-path';
 import { RequestChangeSchema } from '@/lib/schemas';
@@ -214,7 +215,7 @@ function renderPrBody(input: {
       '| --- | --- | --- | --- |',
       ...contradictions.map(
         (c) =>
-          `| \`${c.childRule}\` | \`${c.parentRule ?? '—'}\` | ${inline(c.summary)} | ${inline(c.recommendation)} |`,
+          `| ${markdownTableCode(c.childRule)} | ${markdownTableCode(c.parentRule ?? '—')} | ${markdownTableText(c.summary)} | ${markdownTableText(c.recommendation)} |`,
       ),
       '',
     );
@@ -233,11 +234,6 @@ function renderPrBody(input: {
 
   lines.push('🤖 Generated with [Claude Code](https://claude.com/claude-code)');
   return lines.join('\n');
-}
-
-/** Table cells cannot contain pipes or newlines. */
-function inline(value: string): string {
-  return value.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ').trim();
 }
 
 export const POST = withApiAccess(handlePOST);

@@ -28,6 +28,17 @@ jobs:
       - run: npm run build:verify
       - run: python3 tools/smoke-production.py --dist .next-verify
       - run: npm audit --omit=dev --audit-level=high
+      # Development dependencies run in CI and on developer machines too.
+      # Any critical fails outright; high is gated per PR below because some
+      # high dev advisories (e.g. braces) have no patched release yet.
+      - run: npm audit --audit-level=critical
+      - name: Block newly introduced high/critical dependencies
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime, development, unknown
+          license-check: false
   infrastructure:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

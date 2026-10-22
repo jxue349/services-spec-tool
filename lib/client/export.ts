@@ -1,3 +1,4 @@
+import { markdownTableText } from '../markdown-table';
 import type { TestCase } from '../schemas';
 
 /** Markdown and CSV renderers for the QA matrix, plus a browser download. */
@@ -5,17 +6,11 @@ import type { TestCase } from '../schemas';
 export function testsToMarkdown(tests: readonly TestCase[]): string {
   const header = '| ID | Priority | Scenario | Expected | Rules | In prototype |';
   const divider = '| --- | --- | --- | --- | --- | --- |';
-  const escapePipes = (value: string) => value.replace(/\|/g, '\\|').replace(/\n+/g, ' ');
 
   const rows = tests.map((t) =>
-    [
-      t.id,
-      t.priority,
-      escapePipes(t.scenario),
-      escapePipes(t.expected),
-      t.rules.join(', '),
-      t.inPrototype ? 'yes' : 'no',
-    ].join(' | '),
+    [t.id, t.priority, t.scenario, t.expected, t.rules.join(', '), t.inPrototype ? 'yes' : 'no']
+      .map(markdownTableText)
+      .join(' | '),
   );
 
   const uncovered = tests.filter((t) => !t.inPrototype).length;

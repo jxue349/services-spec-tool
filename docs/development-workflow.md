@@ -26,7 +26,13 @@ npm test
 npm run build:verify
 python3 tools/smoke-production.py --dist .next-verify
 npm audit --omit=dev --audit-level=high
+npm audit --audit-level=critical
 ```
+
+On pull requests CI also runs GitHub dependency review, which fails when the
+PR introduces a dependency with a high or critical advisory, development
+dependencies included. Known residual findings are recorded in
+[security remediation](security-remediation.md).
 
 For infrastructure, deployment tooling, or workflow changes, also run:
 

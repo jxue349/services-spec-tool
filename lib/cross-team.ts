@@ -1,4 +1,5 @@
 import { createRecentMemo, marker, markerIn, markerKey } from './issue-marker';
+import { markdownTableCode, markdownTableText } from './markdown-table';
 
 /**
  * Cross-team conflict reports.
@@ -74,11 +75,6 @@ export function __resetRecentConflicts(): void {
   recent.reset();
 }
 
-/** Table cells cannot contain pipes or newlines. */
-function inline(value: string): string {
-  return value.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ').trim();
-}
-
 export function renderConflictBody(input: {
   topic: string;
   positions: readonly ConflictPosition[];
@@ -120,7 +116,7 @@ export function renderConflictBody(input: {
     '',
     '| Team | Rule | What it requires |',
     '| --- | --- | --- |',
-    ...input.positions.map((p) => `| ${inline(p.team)} | \`${inline(p.ruleId)}\` | ${inline(p.says)} |`),
+    ...input.positions.map((p) => `| ${markdownTableText(p.team)} | ${markdownTableCode(p.ruleId)} | ${markdownTableText(p.says)} |`),
     '',
   );
 

@@ -10,7 +10,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { send, ConverseCommandMock } = vi.hoisted(() => ({
   send: vi.fn(),
-  ConverseCommandMock: vi.fn((input: unknown) => ({ input })),
+  // Called with `new`, so it must be a function, not an arrow (Vitest 4).
+  ConverseCommandMock: vi.fn(function (input: unknown) {
+    return { input };
+  }),
 }));
 
 vi.mock('@aws-sdk/client-bedrock-runtime', () => ({

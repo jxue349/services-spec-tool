@@ -27,6 +27,10 @@ function useMermaid(source: string | null) {
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: 'strict',
+          // Mermaid 12 defaults to ELK and the `neo` look; keep the layout
+          // and styling these state diagrams were designed with.
+          layout: 'dagre',
+          look: 'classic',
           theme: 'dark',
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           themeVariables: {
