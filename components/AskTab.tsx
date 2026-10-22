@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { RuleChip } from './RuleChip';
 import { Button, EmptyState, ErrorNote, Panel, SectionLabel } from './ui';
-import { ask, flagGap, getSpec, reportCrossTeamConflict } from '@/lib/client/api';
+import { ask, flagGap, reportCrossTeamConflict } from '@/lib/client/api';
 import { ASK_QUESTION_MAX_CHARS } from '@/lib/schemas';
 import { matchTeamLabel } from '@/lib/teams';
 import type {
@@ -182,10 +182,21 @@ export function AskTab({
       } else {
         // Asking the parent while a child is selected reads it fresh, so the
         // answer reflects the knowledge base as it stands right now.
-        const text = askingParent ? (await getSpec(spec.parentPath)).content : draft;
-        // Team codes so a question quoting the pre-migration `ENT-007` still
-        // reaches a rule the document now writes as `SVC-ENT-007`.
-        setResult(await ask(text, trimmed, scopeLabel, { teamCodes: teams.map((t) => t.code) }));
+        // Asking the knowledge base loads it server-side: in the folder
+        // layout it is many rule files plus a register, so there is no one
+        // document to fetch and send. The draft rides along so an uncommitted
+        // edit still participates.
+        setResult(
+          askingParent || spec.isParent
+            ? await ask(draft, trimmed, scopeLabel, {
+                scope: 'team',
+                ...(currentTeam ? { teamSlug: currentTeam.slug } : {}),
+                specPath: spec.specPath,
+              })
+            : // Team codes so a question quoting the pre-migration `ENT-007`
+              // still reaches a rule now written `SVC-ENT-007`.
+              await ask(draft, trimmed, scopeLabel, { teamCodes: teams.map((t) => t.code) }),
+        );
       }
     } catch (err) {
       setError(err);

@@ -13,15 +13,44 @@
 
 export const PARENT_FILENAME = 'parent.md';
 export const TEAMS_MANIFEST = 'teams.json';
+export const RULES_DIRNAME = 'rules';
+export const GOLDEN_QA_DIRNAME = 'golden-qa';
+export const REGISTER_FILENAME = 'register.md';
+export const README_FILENAME = 'README.md';
+
+/**
+ * How a team's knowledge base is laid out.
+ *
+ * `single-file` is one `parent.md`. `folder` splits it into
+ * `rules/<domain>.md` with a `register.md` and a `golden-qa/` suite beside
+ * it. Both are supported because teams move at their own pace: Services
+ * split, the other four have not, and a migration that required all of them
+ * to move together would just not happen.
+ */
+export type TeamLayout = 'single-file' | 'folder';
 
 export type Team = {
   /** Directory name under the spec root. Stable; used in paths and IDs. */
   slug: string;
   /** Human name for the UI. */
   name: string;
-  /** Path of this team's parent spec (its knowledge base). */
+  layout: TeamLayout;
+  /**
+   * Canonical entry point: `parent.md`, or `README.md` for a folder team.
+   *
+   * Everything that derives a location from the knowledge base — the
+   * followers file, the change-request target — uses this, so it has to be a
+   * real path inside the team directory even when no single file holds the
+   * rules.
+   */
   parentPath: string;
-  /** Child specs belonging to the team, excluding the parent. */
+  /** Every document whose contents are rules. One file, or `rules/*.md`. */
+  rulePaths: string[];
+  /** The verification & conflict register, when the team keeps one. */
+  registerPath: string | null;
+  /** Golden QA regression sets. */
+  goldenQaPaths: string[];
+  /** Child specs belonging to the team, excluding the knowledge base. */
   specPaths: string[];
   /** Short description from the manifest, when there is one. */
   description?: string;
@@ -107,7 +136,24 @@ export function buildTeams(
   manifest: readonly TeamManifestEntry[] = [],
 ): Team[] {
   const prefix = root === '' ? '' : `${root}/`;
-  const bySlug = new Map<string, { parentPath: string | null; specPaths: string[] }>();
+  type Entry = {
+    parentPath: string | null;
+    readmePath: string | null;
+    rulePaths: string[];
+    registerPath: string | null;
+    goldenQaPaths: string[];
+    specPaths: string[];
+  };
+  const bySlug = new Map<string, Entry>();
+
+  const blank = (): Entry => ({
+    parentPath: null,
+    readmePath: null,
+    rulePaths: [],
+    registerPath: null,
+    goldenQaPaths: [],
+    specPaths: [],
+  });
 
   for (const path of paths) {
     if (!path.startsWith(prefix)) continue;
@@ -117,9 +163,18 @@ export function buildTeams(
     if (rest.length < 2) continue;
 
     const slug = rest[0]!;
-    const entry = bySlug.get(slug) ?? { parentPath: null, specPaths: [] };
+    const entry = bySlug.get(slug) ?? blank();
+
+    // Classify by position inside the team directory. Without this every
+    // rules/ file would be picked up as a child spec, and the knowledge base
+    // would appear in the selector as a dozen unrelated documents.
     if (rest.length === 2 && rest[1] === PARENT_FILENAME) entry.parentPath = path;
+    else if (rest.length === 2 && rest[1] === README_FILENAME) entry.readmePath = path;
+    else if (rest.length === 2 && rest[1] === REGISTER_FILENAME) entry.registerPath = path;
+    else if (rest[1] === RULES_DIRNAME && rest.length === 3) entry.rulePaths.push(path);
+    else if (rest[1] === GOLDEN_QA_DIRNAME && rest.length === 3) entry.goldenQaPaths.push(path);
     else entry.specPaths.push(path);
+
     bySlug.set(slug, entry);
   }
 
@@ -128,17 +183,29 @@ export function buildTeams(
 
   const teams: Team[] = [];
   for (const [slug, entry] of bySlug) {
-    // No parent spec, no team. A folder of specs with nothing to merge into
-    // is not a knowledge base, and treating it as one would give Parent Check
-    // nothing to compare against.
-    if (entry.parentPath === null) continue;
+    // A team needs a knowledge base: one parent spec, or a rules/ folder.
+    // A directory of specs with nothing to check against is not a knowledge
+    // base, and treating it as one would leave Compare nothing to compare to.
+    const layout: TeamLayout | null =
+      entry.parentPath !== null ? 'single-file' : entry.rulePaths.length > 0 ? 'folder' : null;
+    if (layout === null) continue;
+
+    // A folder team has no single rules file, so the README — its governance
+    // document — is the stable anchor everything else hangs off. Falling back
+    // to the first rules file keeps a team that has not written one working.
+    const anchor =
+      layout === 'single-file' ? entry.parentPath! : entry.readmePath ?? [...entry.rulePaths].sort()[0]!;
 
     const meta = named.get(slug);
     teams.push({
       slug,
       name: meta?.name ?? nameFromSlug(slug),
       code: meta?.code ?? codeFromSlug(slug),
-      parentPath: entry.parentPath,
+      layout,
+      parentPath: anchor,
+      rulePaths: layout === 'single-file' ? [entry.parentPath!] : [...entry.rulePaths].sort(),
+      registerPath: entry.registerPath,
+      goldenQaPaths: [...entry.goldenQaPaths].sort(),
       specPaths: [...entry.specPaths].sort(),
       ...(meta?.description !== undefined ? { description: meta.description } : {}),
     });

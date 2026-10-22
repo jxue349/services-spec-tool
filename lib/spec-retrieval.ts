@@ -24,12 +24,29 @@ export type RuleBlock = {
   /** Status marker the spec carries, e.g. "Confirmed", "Unverified". */
   status: RuleStatus | null;
   line: number;
+  /** Heading title, for a heading-form rule. */
+  title?: string;
+  /** Field lines a heading-form rule carries. */
+  fields?: RuleFields;
+};
+
+/**
+ * The `- key: value` lines under a heading-form rule.
+ *
+ * `refs` points at register items (`V-25`). It is the status signal in the
+ * folder layout: README GOV-5 says a rule carrying an *open* register ref
+ * must be caveated, and an uncaveated rule may be asserted as fact.
+ */
+export type RuleFields = {
+  source?: string;
+  refs?: string[];
+  supersededBy?: string[];
 };
 
 export type RuleStatus = 'confirmed' | 'unverified' | 'open' | 'superseded';
 
 
-/** Status vocabulary used by the knowledge base, matched case-insensitively. */
+/** Status vocabulary used by the table/bullet layout, matched case-insensitively. */
 function statusOf(text: string): RuleStatus | null {
   if (/⛔|\bsuperseded\b/i.test(text)) return 'superseded';
   if (/🔴|\bopen\b(?!\s*source)/i.test(text)) return 'open';
@@ -39,8 +56,31 @@ function statusOf(text: string): RuleStatus | null {
 }
 
 /**
- * Splits a spec into rule blocks: one per table row or list item that declares
- * a rule id, plus the heading it sits under.
+ * Status for a heading-form rule, from its fields alone.
+ *
+ * A rule carrying register refs is reported `unverified` here even though the
+ * register may well have resolved the item. Resolving it needs the register,
+ * which this function does not have — and the failure directions are not
+ * symmetric: wrongly caveating a settled rule annoys a reader, wrongly
+ * asserting a disputed one puts a wrong answer in front of a customer.
+ * `resolveStatus` in `lib/register.ts` upgrades it once the register is known.
+ */
+export function statusOfFields(fields: RuleFields): RuleStatus {
+  if ((fields.supersededBy?.length ?? 0) > 0) return 'superseded';
+  if ((fields.refs?.length ?? 0) > 0) return 'unverified';
+  return 'confirmed';
+}
+
+/**
+ * Splits a spec into rule blocks, in any of the three layouts the knowledge
+ * bases use: a table row, a list item, or a `###` heading followed by field
+ * lines and prose.
+ *
+ * The heading form is the folder layout (`rules/<domain>.md`, one rule per
+ * heading). It has to be handled here rather than treated as a section, or
+ * retrieval finds nothing at all in a knowledge base written that way — and
+ * an Ask that answers "the spec does not cover that" to every question looks
+ * like an empty knowledge base rather than a parser that cannot read it.
  */
 export function parseRuleBlocks(spec: string): RuleBlock[] {
   const blocks: RuleBlock[] = [];
@@ -49,12 +89,61 @@ export function parseRuleBlocks(spec: string): RuleBlock[] {
   let section = '';
   const tableRow = new RegExp(`^\\s*\\|\\s*(?:\\*\\*|__)?(${ID_CORE})(?:\\*\\*|__)?\\s*\\|(.*)$`);
   const listItem = new RegExp(`^\\s*[-*+]\\s+(?:\\*\\*|__)?(${ID_CORE})(?:\\*\\*|__)?\\b(.*)$`);
+  // `### ADDON-012 — Device binding`, tolerating ~~strikethrough~~ tombstones
+  // (GOV-4) and any dash the author reached for.
+  const ruleHeading = new RegExp(
+    `^(#{1,6})\\s+(?:~~)?(?:\\*\\*|__)?(${ID_CORE})(?:\\*\\*|__)?\\s*(?:[—–-]\\s*)?(.*?)(?:~~)?\\s*$`,
+  );
+  const fieldLine = /^\s*[-*+]\s+(source|refs|superseded-by)\s*:\s*(.*)$/i;
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? '';
 
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
+      const rule = ruleHeading.exec(line);
+      if (rule) {
+        const fields: RuleFields = {};
+        let j = i + 1;
+
+        // Field lines come first, before the prose.
+        for (; j < lines.length; j += 1) {
+          const field = fieldLine.exec(lines[j] ?? '');
+          if (field === null) {
+            if ((lines[j] ?? '').trim() === '') continue;
+            break;
+          }
+          const key = (field[1] ?? '').toLowerCase();
+          const value = (field[2] ?? '').trim();
+          if (key === 'source') fields.source = value;
+          else if (key === 'refs') fields.refs = splitList(value);
+          else fields.supersededBy = splitList(value);
+        }
+
+        // Prose runs to the next heading of any level.
+        const body: string[] = [];
+        for (; j < lines.length; j += 1) {
+          if (/^#{1,6}\s/.test(lines[j] ?? '')) break;
+          body.push(lines[j] ?? '');
+        }
+
+        const title = (rule[3] ?? '').trim();
+        const text = [`${rule[2]}${title === '' ? '' : ` — ${title}`}`, ...body].join('\n').trim();
+
+        blocks.push({
+          id: rule[2] ?? null,
+          section,
+          text,
+          status: statusOfFields(fields),
+          line: i,
+          ...(title === '' ? {} : { title }),
+          fields,
+        });
+
+        i = j - 1;
+        continue;
+      }
+
       section = (heading[2] ?? '').trim();
       continue;
     }
@@ -86,6 +175,14 @@ export function parseRuleBlocks(spec: string): RuleBlock[] {
   }
 
   return blocks;
+}
+
+/** `V-25, V-26` or `ADDON-015, ADDON-016` into their parts. */
+function splitList(value: string): string[] {
+  return value
+    .split(',')
+    .map((part) => (/^\s*([A-Za-z0-9-]+)/.exec(part)?.[1] ?? '').trim())
+    .filter((part) => part !== '');
 }
 
 const STOP_WORDS = new Set([

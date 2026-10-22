@@ -21,6 +21,14 @@ export type TeamSpec = {
   name: string;
   code: string;
   content: string;
+  /**
+   * The team's verification register, when it keeps one.
+   *
+   * Needed to report a rule's real status: in the folder layout a rule
+   * carries `refs: V-25` and the register says whether V-25 is still open,
+   * so status is a join between two documents.
+   */
+  register?: string;
 };
 
 export type FederatedBlock = ScoredBlock & {

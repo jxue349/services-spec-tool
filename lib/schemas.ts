@@ -160,7 +160,7 @@ export const ASK_QUESTION_MAX_CHARS = 1_000;
  * teams, and no single document answers it. Reading across them is safe;
  * writing across them is not, so no write path takes this field.
  */
-export const AskScopeSchema = z.enum(['spec', 'teams']);
+export const AskScopeSchema = z.enum(['spec', 'team', 'teams']);
 
 export const AskRequestSchema = z.object({
   spec: specString,
@@ -168,6 +168,14 @@ export const AskRequestSchema = z.object({
   /** Which document was asked about, for display and provenance. */
   specLabel: z.string().min(1).max(120),
   scope: AskScopeSchema.optional(),
+  /**
+   * Team whose whole knowledge base to search, for `scope: 'team'`.
+   *
+   * The folder layout has no single document the editor could send: the
+   * Services knowledge base is sixteen rule files plus a register, so the
+   * server loads it by team rather than taking text from the client.
+   */
+  teamSlug: z.string().min(1).max(80).optional(),
   /**
    * Path of the document in `spec`. Federated reads use it to substitute the
    * caller's unsaved draft for that team's committed parent — editing a rule
@@ -518,11 +526,22 @@ export type TeamsResponse = {
   defaultTeamSlug: string | null;
 };
 
+/**
+ * What a document is, so the selector can group it.
+ *
+ * A folder-layout knowledge base is many files that are all "the knowledge
+ * base"; without this they would be listed as a dozen unrelated child specs.
+ */
+export type SpecKind = 'parent' | 'rules' | 'register' | 'golden-qa' | 'readme' | 'spec';
+
 export type SpecListEntry = {
   path: string;
   /** Directory name for a child spec, or an explicit parent label. */
   label: string;
   isParent: boolean;
+  kind: SpecKind;
+  /** Slug of the owning team, when the path belongs to one. */
+  teamSlug?: string;
 };
 
 export type SpecListResponse = {

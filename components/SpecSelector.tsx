@@ -25,8 +25,17 @@ export function SpecSelector({
 }) {
   if (specs.length === 0) return null;
 
-  const children = specs.filter((spec) => !spec.isParent);
-  const parent = specs.find((spec) => spec.isParent);
+  // A folder-layout knowledge base is many files that are all "the knowledge
+  // base". Grouping by kind keeps that legible instead of listing sixteen
+  // rule files as sixteen unrelated specs.
+  const parent = specs.find((spec) => spec.kind === 'parent' || spec.isParent);
+  const rules = specs.filter((spec) => spec.kind === 'rules');
+  const register = specs.filter((spec) => spec.kind === 'register');
+  const goldenQa = specs.filter((spec) => spec.kind === 'golden-qa');
+  const readme = specs.filter((spec) => spec.kind === 'readme');
+  const children = specs.filter(
+    (spec) => spec.kind === 'spec' && !spec.isParent,
+  );
 
   return (
     <label className="block space-y-1">
@@ -40,6 +49,34 @@ export function SpecSelector({
         {parent ? (
           <optgroup label="Knowledge base">
             <option value={parent.path}>{parent.label}</option>
+          </optgroup>
+        ) : null}
+        {rules.length > 0 ? (
+          <optgroup label={`Knowledge base — rules (${rules.length})`}>
+            {rules.map((spec) => (
+              <option key={spec.path} value={spec.path}>
+                {spec.label}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+        {register.length > 0 || goldenQa.length > 0 || readme.length > 0 ? (
+          <optgroup label="Knowledge base — supporting">
+            {readme.map((spec) => (
+              <option key={spec.path} value={spec.path}>
+                README (governance)
+              </option>
+            ))}
+            {register.map((spec) => (
+              <option key={spec.path} value={spec.path}>
+                Verification register
+              </option>
+            ))}
+            {goldenQa.map((spec) => (
+              <option key={spec.path} value={spec.path}>
+                Golden QA — {spec.label}
+              </option>
+            ))}
           </optgroup>
         ) : null}
         {children.length > 0 ? (

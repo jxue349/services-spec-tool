@@ -178,11 +178,18 @@ export const ask = (
   question: string,
   specLabel: string,
   /**
-   * `teams` federates the read across every team's knowledge base; the server
-   * loads those itself and uses `spec` only as the unsaved draft of whichever
-   * team's parent `specPath` names.
+   * `team` searches one team's whole knowledge base and `teams` federates
+   * across every team's. The server loads both itself — a folder-layout
+   * knowledge base is many files, so there is no single document to send —
+   * and uses `spec` only as the unsaved draft of the file `specPath` names.
    */
-  options?: { scope?: 'spec' | 'teams'; specPath?: string; teamCodes?: string[] },
+  options?: {
+    scope?: 'spec' | 'team' | 'teams';
+    specPath?: string;
+    teamCodes?: string[];
+    /** Required for `scope: 'team'` — whose knowledge base to search. */
+    teamSlug?: string;
+  },
 ): Promise<AskResult> =>
   request<AskResult>('/api/ask', {
     method: 'POST',

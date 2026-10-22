@@ -83,7 +83,14 @@ export function specLabel(path: string, root: string, parentPath: string): strin
 
   const rootSegments = root.split('/').filter((s) => s !== '');
   const segments = path.split('/').slice(rootSegments.length).filter((s) => s !== '');
+  const stem = (segments[segments.length - 1] ?? path).replace(/\.md$/i, '');
+  const dir = segments[segments.length - 2];
 
-  if (segments.length >= 2) return segments[segments.length - 2] ?? path;
-  return segments[0]?.replace(/\.md$/i, '') ?? path;
+  // In the folder layout the enclosing directory is the same word for every
+  // file — sixteen rule files would all read "rules". The filename is what
+  // distinguishes them, so it wins there.
+  if (dir === 'rules' || dir === 'golden-qa') return stem;
+
+  if (segments.length >= 2) return dir ?? path;
+  return stem;
 }
