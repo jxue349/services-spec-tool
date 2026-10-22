@@ -1,5 +1,11 @@
 # Development and Release Workflow
 
+The required lifecycle is **local development → local validation → open PR →
+wait for CI gates → squash merge → monitor production deployment**. There is
+no separate development/preview deployment. Docs and spec changes follow this
+same lifecycle because the workflow has no path filters. See
+[architecture](../architecture.md) for the current runtime and AWS boundaries.
+
 ## Branch and develop locally
 
 Use Node.js 22, Python 3, and GitHub CLI authenticated to the company repository.
@@ -9,11 +15,12 @@ Start from a clean working tree; preserve unrelated local changes.
 git fetch origin main
 git switch -c <name>/<short-change> origin/main
 npm ci
-cp .env.example .env
+test -f .env || cp .env.example .env
 DEV_AUTH_BYPASS=true npm run dev
 ```
 
-Configure `.env` as described in the README. Use `npm run stub:glean` for local
+Copy the example only if `.env` does not already exist; preserve local secrets.
+Configure it using [the configuration guide](configuration.md). Use `npm run stub:glean` for local
 provider development. Keep credentials out of Git, logs, PRs, and Docker builds.
 Local development does not require AWS deployment credentials.
 
@@ -49,8 +56,22 @@ Add regression coverage for changed behavior and security boundaries.
 ## Open and merge a PR
 
 Commit with an imperative conventional subject, push the topic branch, and open
-a PR targeting `main`. Use the PR template to record behavior, test evidence,
-deployment impact, and rollback. Include screenshots for UI changes.
+a PR targeting `main`. Opening a PR is a required step, not an optional handoff.
+Use the PR template to record behavior, test evidence, deployment impact, and rollback. Include screenshots for UI changes.
+
+```bash
+git add <changed-files>
+git commit -m "docs: describe the current deployment"
+git push -u origin HEAD
+# Write the completed PR template to a file with actual newlines first.
+gh pr create --base main --title "docs: describe the current deployment" \
+  --body-file /tmp/internal-specs-pr.md
+gh pr checks <pr-number> --required --watch --fail-fast
+```
+
+Do not merge while any required check is queued, pending, failed, cancelled,
+or skipped. A new commit invalidates prior check evidence: wait for the new
+head's results. Passing the aggregate gate means both underlying jobs succeeded.
 
 The active [main ruleset](https://github.com/wyzelabs-inc/KB-Spec-explorer/rules/25593491)
 requires:
@@ -65,7 +86,19 @@ requires:
 If `main` advances, use GitHub's **Update branch** or merge `origin/main` into
 the topic branch, then wait for fresh checks. Do not use skip-CI commit markers,
 rename required checks without updating the ruleset, or disable gates to merge.
-After merge, GitHub deletes the remote topic branch automatically.
+When merge is authorized, record the validated head and use the normal protected
+merge path (never `--admin`):
+
+```bash
+gh pr view <pr-number> --json headRefOid,mergeStateStatus,url
+gh pr merge <pr-number> --squash --match-head-commit <validated-head-sha>
+```
+
+If GitHub refuses the merge because the base/head changed, update the branch and
+wait for fresh checks. Investigate failed jobs; fix on the topic branch. If a
+check remains stuck after its job completed, inspect the Actions run and rerun
+the affected job through GitHub rather than disabling protection or inventing
+a successful status. After merge, GitHub deletes the remote branch automatically.
 
 ## Verify the release
 
@@ -74,14 +107,32 @@ After merge, the `main` workflow validates again, assumes the scoped AWS role
 through OIDC, publishes/scans ECR, and updates ECS by image digest. Watch it with:
 
 ```bash
-gh run list --workflow checks.yml --branch main --event push --limit 5
+gh pr view <pr-number> --json mergeCommit,mergedAt,url
+gh run list --workflow checks.yml --branch main --event push \
+  --commit <merge-commit-sha> --limit 5
 gh run watch <run-id> --exit-status
 ```
 
-The **Deploy main to ECS** job must succeed. A merged PR or green PR validation
-alone does not prove deployment. Check the intended digest, healthy tasks/targets,
+Select the run whose `headSha` matches the merge commit; do not assume the newest
+listed run belongs to this PR. The **Deploy main to ECS** job must succeed.
+A merged PR or green PR validation alone does not prove deployment. Check the intended digest, healthy tasks/targets,
 and release summary; then perform relevant browser acceptance over VPN at
-`https://internal-specs.wyze.com`. Stale queued releases may intentionally skip.
+`https://internal-specs.wyze.com`. The release verifier checks CloudFormation/ECS
+completion and both AZs, and rejects rollback to an older image as a success.
+Report the PR/run links, deployed SHA/digest, task revision, and any acceptance
+gaps. Do not report deployment complete if the release failed or was skipped.
+Stale queued releases may intentionally skip; identify and verify the newer
+successful release that includes the change instead.
+
+A read-only operator recheck is available when needed:
+
+```bash
+AWS_PROFILE=012619468172_AWSAdministratorAccess python3 tools/ci_release.py \
+  --verify-image '012619468172.dkr.ecr.us-west-2.amazonaws.com/internal-specs@sha256:<digest>'
+```
+
+Inspect a failed main run with `gh run view <run-id> --log-failed`. Fix through
+a new PR or use the reviewed rollback procedure; do not push a direct main fix.
 
 Image releases retain current auth, secrets, networking, and capacity. Template,
 SSO, DNS, and other configuration changes require the separate reviewed operator
@@ -99,8 +150,8 @@ without cancelling a running deployment. Jobs have explicit time limits.
 Runners use `ubuntu-24.04` to avoid unexpected `ubuntu-latest` OS migrations;
 Actions use current releases while the application remains on Node.js 22.
 
-Dependabot opens weekly npm, Actions, and Docker update PRs after this
-configuration reaches `main`. They follow the same gates and are not auto-merged.
+Dependabot is configured for weekly npm, Actions, and Docker update PRs.
+They follow the same gates and are not auto-merged.
 Review major upgrades separately. CodeQL and organization security scanners
 continue running; scanner advisories do not replace the required validation jobs.
 

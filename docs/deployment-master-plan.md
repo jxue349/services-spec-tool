@@ -18,7 +18,7 @@ can proceed without repeated permission requests. Existing repository reviews,
 DNS production approvals, unavailable credentials, and material scope changes
 remain separate dependencies.
 
-**Testing amendment, approved 2026-10-21:** the user requested secret fields to
+**Historical testing amendment, approved 2026-10-21 (ended 2026-10-22):** the user requested secret fields to
 fill in and temporary SSO disablement. Deploy `AuthMode=test-readonly` behind
 the unchanged VPN/office allowlist. Block all repository mutations and OIDC
 login/callback routes; permit spec reads and model calls once credentials are
@@ -43,6 +43,37 @@ GitHub OIDC role, scan and deploy immutable image digests, and preserve current
 runtime parameters through an image-only CloudFormation change set. Pull requests
 remain validation-only. Infrastructure changes retain the operator plan/apply path.
 
+## Current deployment snapshot
+
+Verified **2026-10-22**, after [PR #8](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/8)
+merged and [main release 39836529786](https://github.com/wyzelabs-inc/KB-Spec-explorer/actions/runs/39836529786)
+succeeded. This is dated evidence, not a pin for future releases; read the live
+service and release summary before preparing changes.
+
+| Item | Verified state |
+| --- | --- |
+| Deployed main commit | `dece35abc9a64b82d55f7cebb82cd6ba8aed268c` |
+| Image digest | `sha256:6d8d185330d5deaf9fb832ff9e005e102160da91895dc2974d9a43821e1cbd03` in the `internal-specs` ECR repository |
+| Task definition | `internal-specs:7`; two healthy tasks/targets across `us-west-2a` and `us-west-2b` |
+| CloudFormation | Foundation, service, CI, and Cognito stacks all `UPDATE_COMPLETE` |
+| Authentication | `AuthMode=oidc`; Cognito/JumpCloud assigned-user login and authenticated spec reads pass |
+| Runtime controls | Development bypass and direct commits disabled; Glean compiler, GPT agent, company knowledge disabled |
+| CI/CD | Main PR-only; `application`, `infrastructure`, `PR gate` required; zero approvals; merge triggers production image release |
+| Release safety | Image-only parameter change; other service settings preserved; ECR scan complete with zero findings |
+| Alarm routing | Metric alarms exist; `AlarmTopicArn` empty, so routed notifications are not configured |
+
+Remaining acceptance work: explicitly test an unassigned user, exercise
+authenticated writes against an approved sandbox, and finish security sign-off
+tracked under `SR-912`. Alarm notification ownership/routing remains an operational
+follow-up. These are not implied complete by a healthy ECS deployment.
+
+Use [architecture.md](../architecture.md) for the current system design,
+[the development workflow](development-workflow.md) for PR-to-release steps,
+and [the runbook](deployment-runbook.md) for operator changes. The dated rollout
+sections below preserve historical evidence, including the earlier temporary
+read-only mode, task revisions, and audit results; they do not describe the
+current production configuration where superseded by this snapshot.
+
 ## Approved decisions
 
 | Item | Decision | Status |
@@ -58,7 +89,7 @@ remain validation-only. Infrastructure changes retain the operator plan/apply pa
 | Compiler | Glean; company-knowledge second opinion disabled initially | Approved baseline |
 | Persistence | GitHub files, history, PRs, and issues; signed session cookies | Existing architecture |
 | Initial capacity | Two tasks, each 0.5 vCPU and 1 GiB RAM | Starting size to validate |
-| Infrastructure | CloudFormation, separate foundation and service templates | Approved baseline |
+| Infrastructure | CloudFormation: foundation, service, CI-role, and Cognito stacks | Deployed |
 | Automatic application releases | Checked `main` pushes publish ECR images and update the service stack; dedicated CI access stack | Active after PR #1 merged; PR-only main rules enforced |
 
 A different
@@ -392,14 +423,14 @@ network resources, the certificate, and the cluster throughout rollback.
 | 2 Application preparation | Complete | 394 tests, lint, typecheck, verification build, standalone and AMD64 container smoke pass |
 | 3 Infrastructure and tooling | Operator tooling and main-branch release workflow active | [Application PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1) merged; dedicated CI role provisioned and validated; required PR gates and repository policy documented in the development workflow |
 | 4 Foundation and image | Complete for test deployment | Test-mode image `247140b` published and scanned: zero ECR OS findings; encrypted runtime secret initialized |
-| 5 Service infrastructure checks | OIDC deployment verified | UPDATE_COMPLETE on task definition `internal-specs:6`; two healthy tasks/targets across two AZs; original image and allowlist preserved; anonymous protected APIs return 401 |
+| 5 Service infrastructure checks | OIDC deployment verified | Current revision `internal-specs:7`; two healthy tasks/targets across two AZs; OIDC and allowlist preserved by the latest image release; anonymous protected APIs return 401 |
 | 6 DNS PR and application | Complete | [DNS PR #49](https://github.com/wyzelabs-inc/wyze-dns-config/pull/49) merged at 20:14 UTC on 2026-10-21; final hostname resolves to the ALB and HTTPS works |
 | 7 Integrations and release | GitHub reads, Glean Ask/state generation, and assigned-user SSO verified | JumpCloud login as `cxu@wyze.com`, authenticated spec loading, local sign-out, and repeat sign-in pass after claim-mapping correction. Unassigned-user denial, authenticated sandbox writes, remaining feature acceptance, failed-rollout recovery, and observation remain pending |
 
 Approval record: **Approved by the user on 2026-10-21: “looks good, let get start.”** Update each phase with its commit/PR, relevant AWS
 outputs, test results, and remaining dependencies as execution progresses.
 
-### Validation evidence, 2026-10-21
+### Historical validation evidence, 2026-10-21
 
 - Temporary test mode passes 39 access-boundary tests, 3 deployment-secret tests,
   and production standalone smoke checks. Missing provider keys permit the
@@ -434,7 +465,7 @@ outputs, test results, and remaining dependencies as execution progresses.
   deletion protection, ALB access logs, and security-rule descriptions in response
   to CI findings. The revised template contains 16 service-owned resources.
 
-### Provisioned foundation and release candidate
+### Historical foundation and initial release candidate, 2026-10-21
 
 | Item | Recorded value |
 | --- | --- |
@@ -476,7 +507,7 @@ CodeQL, secret-scanning, and both Lacework checks pass for that commit. Wiz
 advisory findings remain visible in PR #1. Real GitHub reads and Glean
 Ask/state-generation checks pass; OIDC and authenticated write acceptance remain pending.
 
-### Read-only test deployment evidence
+### Historical read-only test deployment evidence, 2026-10-21
 
 - Service stack `internal-specs-service`: initially created with seven additions
   by change set `review-1792613181`; now `UPDATE_COMPLETE` after the Glean mapping
@@ -576,8 +607,9 @@ approval, and an explicit local-development-to-deployment workflow on 2026-10-21
 - `AGENTS.md`, `CLAUDE.md`, a PR template, and the
   [development workflow](development-workflow.md) describe local checks, PR
   merge, deployment verification, and rollback. Weekly dependency update PRs
-  use the same required checks. Workflow/docs changes become active after their
-  hardening PR merges; repository settings are already enforced.
+  use the same required checks. These workflow/docs changes are merged and
+  active; repository settings and the latest successful release were reverified
+  on 2026-10-22.
 
 ## References
 

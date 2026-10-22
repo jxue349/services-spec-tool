@@ -1,5 +1,10 @@
 # Internal Specs Cognito and JumpCloud SSO
 
+The current service uses OIDC; the temporary SSO-disabled test phase has ended.
+See [architecture](../architecture.md) for the request/login flow and
+[the current release snapshot](deployment-master-plan.md#current-deployment-snapshot)
+for the deployed image/task revision. Image releases preserve these SSO settings.
+
 ## Provisioned bootstrap
 
 On 2026-10-21, the operator applied `infra/cognito.yaml` to account
@@ -92,7 +97,10 @@ executing service change set `review-1792691758` on 2026-10-22. Only `AuthMode`,
 `OidcIssuer`, and `OidcClientId` changed. Task definition `internal-specs:6`
 uses the previously deployed image digest
 `sha256:c86b84ce102468d5826ed2b4f5427666fe105f30f917aac2b0ede9e79edf19cf`.
-The release verifier confirms two healthy tasks and ALB targets across two AZs.
+This is the historical cutover revision. The later PR #8 image release advanced
+the service to `internal-specs:7` while preserving OIDC and all other runtime
+parameters; see the current release snapshot above. The cutover release verifier
+confirmed two healthy tasks and ALB targets across two AZs.
 The six allowed ingress CIDRs remain unchanged.
 
 Live checks pass: health returns 200; auth status reports `oidc`; anonymous

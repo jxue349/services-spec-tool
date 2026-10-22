@@ -2,19 +2,22 @@
 
 Account `012619468172`, region `us-west-2`, hostname
 `https://internal-specs.wyze.com`. The approved scope and execution status are in
-[the master plan](deployment-master-plan.md).
+[the master plan](deployment-master-plan.md#current-deployment-snapshot).
+See [architecture.md](../architecture.md) for the current AWS resource inventory,
+network/authentication design, and known operational limits.
 
 ## Automatic releases from main
 
 The [Checks workflow](../.github/workflows/checks.yml) validates pull requests and
 pushes to `main`. Every successful `main` push also runs **Deploy main to ECS**.
-Pull requests and other branches never deploy. The protected branch requires a
+Pull requests and other branches never deploy. There is no development/preview
+environment; even docs/spec-only main merges trigger a production image release. The protected branch requires a
 PR, up-to-date checks, and resolved conversations, with zero required reviewer
 approvals and no bypass actors. See the [development workflow](development-workflow.md)
 for contributor commands and the administrative policy files.
 
 1. Application checks must pass: lint, typecheck, Vitest, production build/smoke,
-   and the production dependency audit. Infrastructure checks validate all four
+   production/full dependency audits, and PR dependency review when applicable. Infrastructure checks validate all four
    CloudFormation templates, lint the workflow, and run deployment-tool tests.
    The required **PR gate** explicitly fails unless both jobs succeed; the
    deployment job depends on that gate.
@@ -63,7 +66,7 @@ the OIDC subject; review trust conditions before adding one.
 The role can publish/scan this ECR repository, manage release change sets for
 `internal-specs-service`, update this ECS service, and pass only its existing
 task/execution roles. It cannot read Secrets Manager values or modify the
-foundation, IAM roles, DNS, or networking. Registration/inspection APIs that lack
+foundation, Cognito, IAM roles, DNS, or networking. Registration/inspection APIs that lack
 resource-level scoping have the minimum required wildcard permissions.
 CloudFormation's existing-subnet parameter validation has read-only
 `ec2:DescribeSubnets` permission restricted to `us-west-2`.
@@ -104,8 +107,8 @@ python3 -m unittest discover -s tools -p 'test_*.py'
 ```
 
 Production credentials are not required to build the image. Normal OIDC startup
-does require them. The initial application configuration uses Glean, spec-only
-answers, JumpCloud, and the repository's `specs/` directory. Development can
+does require them. The current application configuration uses Glean, spec-only
+answers, Cognito/JumpCloud, and the repository's `specs/` directory. Development can
 explicitly bypass authentication with `DEV_AUTH_BYPASS=true`; production cannot.
 The separately authorized temporary mode is described below.
 
@@ -224,7 +227,10 @@ set `AuthMode=oidc`, and plan/apply the service update. Confirm anonymous reques
 return 401 and validate JumpCloud sign-in before accepting authenticated writes.
 The deployment tool refuses normal OIDC mode while required secrets are empty.
 
-## Publish the image
+## Publish an operator image
+
+Normal image releases run automatically after a checked main merge. Use this
+manual path only for a reviewed operator release; do not overlap the CI rollout.
 
 Commit the reviewed changes first. The publish command refuses a dirty working
 tree, builds for `linux/amd64`, uses the commit SHA as an immutable ECR tag, and
@@ -238,11 +244,12 @@ Review the ECR findings before deployment. An image upload or completed scan is
 not evidence that vulnerabilities have been resolved. Record the exact digest
 in the release evidence and deploy by digest, not by tag.
 
-The production npm audit on 2026-10-21 reports two low findings in the
-Mermaid/KaTeX path and no moderate, high, or critical findings. The full audit
-also includes development-tool findings in the Vitest and Tailwind toolchains;
-those require a separate compatible toolchain upgrade. The standalone runtime
-excludes development tools. CI gates production npm findings at high severity;
+The 2026-10-22 remediation removed the earlier production npm findings; the
+production audit reports zero vulnerabilities. The full audit passes the
+critical threshold but retains a development-only `braces` advisory; see
+[security remediation](security-remediation.md) for details. Re-run audits for
+every candidate. CI gates production findings at high severity, all dependencies
+at critical severity, and newly introduced PR dependencies at high severity;
 the [ECR basic scan](https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-basic.html)
 separately covers OS packages in the final runtime image. JavaScript dependency
 findings come from npm audit. The runtime installs Alpine's patched
@@ -251,7 +258,15 @@ the affected `1.3.2-r0` package.
 
 ## Deploy the service
 
-Prepare a non-secret parameter file outside the repository:
+For an existing service, first snapshot **all current parameters** and the image
+digest. `tools/deploy.py plan service` uses template/tool defaults for omitted
+parameters; unlike automated image releases, it does not preserve every live
+value automatically. Review the complete before/after parameter diff, especially
+OIDC, secret references, network IDs, capacity, and alarm routing. Apply only the
+intended changes and avoid any concurrent CI update.
+
+The following is an illustrative subset, **not a complete update file**. Prepare
+the full non-secret parameter file outside the repository from the live values:
 
 ```json
 {
@@ -269,6 +284,7 @@ keys without displaying their values. Optional `AlarmTopicArn` connects alarms
 and ECS deployment-failure events to an existing SNS topic. Its owner must allow
 CloudWatch and EventBridge publishing. Without it, metric alarms still exist,
 but there are no routed notifications or deployment-event notification rule.
+As verified on 2026-10-22, production has an empty `AlarmTopicArn`.
 
 ```bash
 python3 tools/deploy.py plan service --parameters /secure/path/service-parameters.json
@@ -286,7 +302,9 @@ requests nearing the deadline.
 
 ## DNS and acceptance
 
-Add the actual target in a PR to `wyzelabs-inc/wyze-dns-config`:
+The DNS-only CNAME already exists from DNS PR #49. Future target changes must
+use a PR in `wyzelabs-inc/wyze-dns-config`, preserving the existing ownership
+metadata and that repository's review requirements:
 
 ```js
 CNAME("internal-specs", "<actual-alb-dns-name>.", TTL(300), CF_COMMENT("owner: cxu@wyze.com, AI Spec Explorer")),

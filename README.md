@@ -1,659 +1,154 @@
 # AI Spec Explorer
 
-A Git-versioned **Product Behavior Specification** is the single source of
-truth. A *behavior compiler* — Glean's Chat API, called server-side — turns
-that one document into four representations:
+Explore, compare, and maintain Wyze product behavior specifications stored in
+GitHub. The application uses Next.js 15, React 19, and strict TypeScript. Glean
+generates structured answers from the selected specification and its rule IDs;
+Amazon Bedrock is an optional compiler implementation.
 
-| Tab | What it does |
+**Production:** [internal-specs.wyze.com](https://internal-specs.wyze.com).
+Connect through an approved company VPN or office network and sign in with
+JumpCloud. Access requires assignment to `wyze-internal-specs-users`; Cognito
+bridges JumpCloud SAML to the application's OIDC login. SSO is enabled.
+
+## Workspace
+
+Select a team and a parent knowledge base or child specification. The workspace
+provides six tabs:
+
+| Tab | Purpose |
 | --- | --- |
-| **Ask** | The main surface. A question in, an answer out, with the rules it rests on and their status. Retrieves over the spec rather than sending all of it |
-| **Behavior Explorer** | Resolves entitlements for a built scenario, and answers free-form "what if…?" questions |
-| **QA Test Matrix** | 15–25 test cases, weighted toward behavior the prototype never visualized |
-| **State Machine** | The subscription lifecycle as a Mermaid diagram plus a transitions table |
-| **Consistency Check** | Every rule in the spec scored against prototype coverage and QA coverage |
-| **Parent Check** | A child spec against the parent knowledge base: what merges, what contradicts, what is already covered — then opens a change request |
+| Ask | Answer questions with rule-ID citations; optionally search across team knowledge bases. |
+| Compare | Compare a child specification against its own team's parent and propose parent changes. |
+| Behavior Explorer | Turn the current specification into structured behavior rows. |
+| QA Test Matrix | Generate test cases from the specification. |
+| State Machine | Generate and render a Mermaid state diagram. |
+| Consistency Check | Identify contradictions and ambiguities within the specification. |
 
-Every conclusion cites the rule IDs (`R-xxx`) it came from, and every rule ID
-renders as a chip that reveals that rule in the spec editor.
+Editor changes remain in browser memory until submitted. Saving creates a
+branch and pull request; production disables direct commits. Upload `.md` or
+`.txt` files up to 100 KiB to propose new specs, download committed Markdown,
+and inspect GitHub history. Gap reports and cross-team reports use GitHub issues.
+All assigned users can read and propose changes across teams; team path checks
+do **not** implement per-user team permissions.
 
-The demo loop is: **edit a rule → recompile → the outputs move → check the
-change back in as a pull request.** Compilers always run against the text in
-the editor, including uncommitted edits.
+## Local setup
 
----
-
-## Setup
+Use Node.js 22 and a GitHub token for the configured repository. Start from a
+topic branch based on current `origin/main`.
 
 ```bash
-cp .env.example .env    # then fill in the values
 npm ci
-DEV_AUTH_BYPASS=true npm run dev  # local development only, http://localhost:3000
+test -f .env || cp .env.example .env
 ```
 
-### Environment variables
+Configure `.env` using [the configuration guide](docs/configuration.md). The
+example uses `wyzelabs-inc/KB-Spec-explorer`, `specs/`, and the `services` team.
+Use a separately scoped sandbox repository when exercising writes.
 
-All server-side. There are deliberately **no `NEXT_PUBLIC_*` variables** — no
-key, token, owner, or repo name reaches the client bundle.
-
-| Variable | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `COMPILER_PROVIDER` | no | `glean` | Which LLM backs the compiler: `glean` or `bedrock` |
-| `BEDROCK_MODEL_ID` | bedrock only | — | e.g. `openai.gpt-5.6-luna` |
-| `AWS_REGION` | no | `us-west-2` | Region the Bedrock model is enabled in |
-| `BEDROCK_TEMPERATURE` | no | `0` | 0 keeps compiles reproducible |
-| `GLEAN_CLIENT_ID` + `GLEAN_CLIENT_SECRET` | yes† | — | OAuth client for the `client_credentials` grant. Preferred — see below |
-| `GLEAN_SCOPE` | no | `chat` | Scope requested for the client-credentials token |
-| `GLEAN_API_KEY` | yes† | — | Alternative: long-lived platform token from [app.glean.com/admin/platform/token](https://app.glean.com/admin/platform/token) |
-| `GLEAN_INSTANCE` | yes\* | — | Instance name; the backend origin is `https://<instance>-be.glean.com` |
-| `GLEAN_BASE_URL` | no | — | Full backend origin, for deployments that don't follow that pattern. Overrides `GLEAN_INSTANCE` |
-| `GLEAN_AGENT` | no | `GPT` | Which Glean agent answers. **Leave this as `GPT`** — see below |
-| `GLEAN_MODE` | no | `DEFAULT` | Reasoning mode passed through to Glean |
-| `GLEAN_ACT_AS` | no | — | Required only when the token is a *global* rather than user-scoped Glean token |
-| `GITHUB_TOKEN` | yes | — | Fine-grained PAT for the spec repo (scoping below) |
-| `GITHUB_OWNER` | yes | — | Owner of the spec repo |
-| `GITHUB_REPO` | yes | — | Spec repo name |
-| `SPEC_PATH` | no | `spec/behavior.md` | Path of the spec file in that repo |
-| `SPEC_BASE_BRANCH` | no | `main` | Branch treated as the state of record |
-| `GIT_AUTHOR_NAME` | no | `AI Spec Explorer` | Commit author for spec commits |
-| `GIT_AUTHOR_EMAIL` | no | `spec-explorer@wyze.com` | Commit author email |
-| `ALLOW_DIRECT_COMMIT` | no | `false` | Allows committing straight to the base branch |
-
-\* Either `GLEAN_INSTANCE` or `GLEAN_BASE_URL` must be set.
-† Set **exactly one** of the OAuth client or `GLEAN_API_KEY`. Configuring both
-is rejected at startup rather than silently preferring one, so a stale key
-can't sit around looking load-bearing.
-
-### Getting a Glean credential
-
-You do **not** need an admin-issued platform token. Glean's authorization
-server advertises the `client_credentials` grant:
+For local development with real GitHub and Glean credentials:
 
 ```bash
-curl -s https://<instance>-be.glean.com/.well-known/oauth-authorization-server/oauth
-# grant_types_supported: ['authorization_code', 'client_credentials', 'refresh_token']
-# token_endpoint_auth_methods_supported: ['none','client_secret_basic','client_secret_post','private_key_jwt']
+DEV_AUTH_BYPASS=true npm run dev
 ```
 
-So ask for an OAuth client (client id + secret) with the `chat` scope, set
-`GLEAN_CLIENT_ID` / `GLEAN_CLIENT_SECRET`, and the app handles the rest: it
-exchanges them at `/oauth/token` using `client_secret_basic`, caches the token
-until a minute before expiry, and re-mints once if a cached token is rejected.
+Open `http://localhost:3000`. The bypass is development-only; production rejects
+it. To use synthetic Glean responses, run `npm run stub:glean` in another terminal,
+set `GLEAN_BASE_URL=http://127.0.0.1:3399` and
+`GLEAN_API_KEY=local-stub-token`, and leave the Glean OAuth fields empty. GitHub
+still needs a real token. The stub tests the integration flow, not model quality.
 
-**Glean's MCP endpoint is not an alternative credential.** `/mcp/default` and
-`/rest/api/v1/chat` sit behind the same authorization server and the same
-`Authorization: Bearer` wall — both return the same `WWW-Authenticate`
-challenge pointing at `/oauth`. MCP is a protocol for letting an *agent*
-discover tools; this app makes exactly one known call, so MCP would add an
-OAuth-session layer for no benefit over a single `fetch`.
+## Commands and validation
 
-### Choosing a compiler provider
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the development server on port 3000. |
+| `npm run lint` / `npm run typecheck` | Check ESLint rules and strict TypeScript types. |
+| `npm test` / `npm run test:watch` | Run Vitest once / in watch mode. |
+| `npm run build:verify` | Build into `.next-verify` without replacing the development build. |
+| `python3 tools/smoke-production.py --dist .next-verify` | Check production startup, authentication, and API boundaries with controlled fixtures. |
+| `npm run build` / `npm start` | Build / serve production locally; production configuration checks still apply. |
+| `npm run stub:glean` | Start the local Glean stand-in on port 3399. |
+| `npm run migrate:rule-ids` | Preview team-prefixed rule-ID migration; see the multi-team guide before applying. |
 
-`COMPILER_PROVIDER` selects the LLM. The provider supplies text; the JSON-only
-contract, strict parse, schema validation and corrective retry live once in
-`lib/compiler.ts`, so adding a provider means adding a transport, not
-re-deriving the parsing rules.
+Before a PR, run lint, typecheck, tests, build verification, production smoke,
+`npm audit --omit=dev --audit-level=high`, and
+`npm audit --audit-level=critical`. Tests live in `tests/**/*.test.ts`, use Vitest's
+Node environment, and mock external integrations. No numeric coverage threshold
+is configured. See [the development workflow](docs/development-workflow.md) for
+infrastructure checks and the complete release procedure.
 
-**Bedrock** (`COMPILER_PROVIDER=bedrock`) is called through the **Converse
-API**, which gives one request and response shape across every model Bedrock
-hosts — switching between an OpenAI, Anthropic or Amazon model is a change of
-`BEDROCK_MODEL_ID` and nothing else. `InvokeModel` would have meant a payload
-branch per vendor.
+## Project structure
 
-**Credentials are deliberately not this app's business.** The AWS SDK resolves
-them from its own provider chain — environment, shared config, SSO, or an
-instance/task role — so no AWS secret is ever read, stored or logged here. In
-AWS, attach a role with `bedrock:InvokeModel` and set no keys at all. Compare
-that with the Glean path, which has to hold a token.
-
-Two first-run failures are called out explicitly rather than retried, because
-neither improves on a second attempt:
-
-- `ValidationException` / `ResourceNotFoundException` → the model id is not
-  available in that region. Some models are only reachable via a cross-region
-  inference profile, where the id carries a prefix (`us.openai.gpt-5.6-luna`).
-  The error names the model and region so this is a one-line fix.
-- `AccessDeniedException` → the IAM policy or Bedrock model access is missing.
-
-Throttles and 5xx get one retry. Errors never echo the prompt, because the
-prompt contains the spec.
-
-### Why `agent=GPT`
-
-The compiler runs on Glean's Chat API. Glean's `agentConfig.agent` decides
-whether Glean *searches your company's content* before answering:
-
-| `agent` | Retrieval | Notes |
-| --- | --- | --- |
-| `GPT` | **none** — straight to the LLM | What this tool needs. Glean is deprecating it |
-| `DEFAULT` | company knowledge | Deprecating |
-| `FAST` | agentic engine, retrieval-capable | Must be enabled in the deployment |
-| `ADVANCED` | same, slower and higher quality | Must be enabled in the deployment |
-
-This tool's entire premise is that **the spec text in the editor is the only
-source of truth**, and that the compiler names a spec gap rather than filling
-one in. A retrieval agent breaks that: asked about Cam Plus grace periods it
-will find the real Confluence page, the real Jira ticket, and the real Slack
-thread, and blend them into an answer that *looks* spec-derived. The
-consistency check would then report coverage for behavior the spec never
-defines — which is worse than no answer, because it reads as authoritative.
-
-So `GPT` is the default, an unrecognised `GLEAN_AGENT` is a hard startup error
-rather than a silent fallback, and a test asserts the outgoing request carries
-`agent: "GPT"`.
-
-**This needs revisiting.** Glean lists both `DEFAULT` and `GPT` as deprecating
-in favour of `FAST`/`ADVANCED`. When `GPT` goes away, the replacement is not a
-drop-in: you will need a Glean agent whose `gleanSearchConfig` is *omitted*
-(their agent spec defines an omitted `gleanSearchConfig` as "no company
-knowledge access") and to invoke it by `agentId`. Do not just switch to
-`FAST` and hope.
-
-### One more consequence of using Glean
-
-The spec text is sent to Glean on every compile, so it lands in Glean's chat
-infrastructure. Requests set `saveChat: false` so they are not kept as named
-chats, but this is Glean's retention policy, not ours. If the spec is ever
-more sensitive than "internal", check that against your Glean data-retention
-and governance settings before pointing this at it.
-
-### GitHub token scoping
-
-Create a **fine-grained personal access token** limited to the single spec
-repo. Do not use a classic PAT, and do not grant org-wide scopes.
-
-1. GitHub → Settings → Developer settings → **Personal access tokens →
-   Fine-grained tokens** → *Generate new token*.
-2. **Resource owner**: the org or user that owns the spec repo.
-3. **Repository access**: *Only select repositories* → pick the spec repo, and
-   nothing else.
-4. **Repository permissions** — exactly three, nothing more:
-   - **Contents**: Read and write (read the spec, create the branch and commit)
-   - **Pull requests**: Read and write (open the PR)
-   - **Issues**: Read and write (log questions the spec cannot answer)
-
-   Without Issues the spec flows all work and only gap logging fails, with a
-   message saying which permission is missing.
-5. Leave every account permission at *No access*. `workflow`, `admin`, and
-   `delete_repo` are never needed; if something asks for them, stop.
-6. Set an expiry and put a calendar reminder to rotate it.
-
-The token lives only in the server environment. If you deploy this, set it as a
-runtime secret — never in the image, the repo, or a build arg.
-
-### If the spec file does not exist yet
-
-The app shows an **Initialize spec in repo** button. It commits a starter Wyze
-subscription-management spec (channels, entitlement scopes, rules R-101 to
-R-401, lifecycle states, and a prototype-coverage list) through the same
-pull-request flow as any other change — the first version gets reviewed like
-every version after it.
-
----
-
-## Ask
-
-Ask is the surface support agents and users of this tool come to. It takes a
-question, not a spec to compile, so the answer leads and the evidence follows.
-
-**It retrieves rather than sending the whole document.** The parent knowledge
-base is 74 KB across 172 rules and grows with every distillation; a question
-about Pro AI pricing sends the ~50 rules that bear on it, not all 172. In
-practice that is a 75 KB prompt down to ~26 KB, and the model is not asked to
-find a needle in a document it half-reads. Retrieval is lexical
-(`lib/spec-retrieval.ts`) because rule text is dense with exact identifiers —
-`feature-cloud-60`, `GW_WBDC`, `ADDON-011` — that questions quote verbatim, and
-an exact match on those beats semantic similarity with no index to keep fresh.
-Naming a rule id in the question retrieves that rule outright.
-
-**Answers carry rule status.** The knowledge base marks every rule ✅ Confirmed,
-⚠️ Unverified, 🔴 Open or ⛔ Superseded, and its own `GOV-006` says answers may
-be asserted only from confirmed rules. So each citation shows its status, an
-answer resting on anything weaker comes back with a caveat telling the agent
-not to assert it to a customer, and a superseded rule is never answered from as
-though it were current.
-
-**It says when the spec does not answer.** Confidence `none` plus a named spec
-gap, rather than a plausible guess. If retrieval matches nothing at all, the
-route answers that directly without calling the model.
-
-Scope: with a child spec selected, a toggle switches between asking that spec
-and asking the knowledge base.
-
-### Retrieval is half of it
-
-Ask is a RAG loop: **retrieve** the relevant rules, then **interpret** them
-into an answer. Retrieval is implemented here and tested. Interpretation is
-the model — and without a configured credential there is no model, so the dev
-stub cannot do it.
-
-The stub therefore does not pretend to answer. It returns the closest rule by
-word overlap, labelled as such, never claims high confidence, and points at
-the retrieved rules. A stub that produced fluent wrong answers would be worse
-than one that produces none, because a support agent cannot tell the
-difference.
-
-Every answer carries the rules that were retrieved, expandable under the
-answer. That matters beyond the stub: it lets a reader check a real model's
-answer against its sources, and makes an answer that cites the wrong rule
-visibly wrong rather than quietly wrong.
-
-### Company knowledge, as a second opinion
-
-With `GLEAN_COMPANY_KNOWLEDGE=true`, Ask also puts the question to Glean's
-**retrieval** agent against Confluence, Jira and Slack, and shows the result
-in a separate panel labelled *not from the spec*.
-
-This is the one place retrieval is wanted, and it is deliberately the
-opposite of the `agent=GPT` rule that governs the spec answer. The two never
-share a call, a prompt, or a panel. Merging them would destroy the only
-guarantee this tool makes — that a reader can tell which claims the
-specification actually backs.
-
-It earns its place because the knowledge base is distilled *from* a Confluence
-page of record. When the two disagree, one of them is stale, and that is
-precisely the signal a spec owner needs. Observed on the first real run:
-
-> **Spec:** lists Cam V3, Cam V3 Pr, and Cam Pan V3 as supported *at launch*;
-> does not confirm the list is still current.
->
-> **Company knowledge:** the current support matrix marks Cam V3, Cam V3
-> **Pro**, and Pan V3 as supported; other models are TBD.
-
-The second answer both confirms the list and resolves the currency question —
-and exposes a typo in the spec (`Cam V3 Pr`).
-
-The lookup is best-effort: it runs in parallel with the spec answer and
-resolves to null on any failure, so it can never take down an answer the
-specification already gave.
-
-### Uploading and downloading specs
-
-**Upload spec** takes a Markdown or text file, asks for a name, shows the path
-it will occupy, and opens a pull request adding it as **v1**. A new spec
-entering the repo is a product-truth change too, so it gets the same review as
-the hundredth revision — and an upload can never silently overwrite, because
-a name already in use comes back as a conflict.
-
-The file is validated in the browser before anything is sent: extension, size,
-and whether it is really text. If it does not look rule-shaped — numbered
-rules like `ADDON-001` — it says so and uploads anyway, because an undistilled
-PRD is still worth having in the repo, just not worth pointing the compilers
-at yet.
-
-**Download** writes the committed spec with its version in the filename:
-`parent-v4.md`, `cam-plus-v3.md`. Commits are the versions, so vN is the
-number of commits touching that path. Two details that matter because these
-filenames get pasted into tickets:
-
-- It downloads the **committed** text, not the editor draft. "The verified
-  spec" means the version of record.
-- A spec with more revisions than the tool scanned reads `v100+` rather than
-  claiming a precision it could not confirm.
-
-### The gap log
-
-A question the spec cannot answer is the most useful signal this tool
-produces: a real person needed an answer the organisation has not written
-down. **Flag to knowledge-base owners** turns it into a GitHub issue labelled
-`kb-gap`, carrying the question, which spec was asked, what retrieval found,
-and an @-mention of the parent spec's followers. Owners get a reviewable
-backlog and decide what to distil into the knowledge base.
-
-Issues rather than pull requests: a gap is a question to be answered, not a
-change to merge, and it needs somewhere to be discussed before anyone knows
-what the rule should say.
-
-Both a **title** and a **description** are optional on the flag. Left blank,
-the title is generated from the question and no note is added — the common
-case, so the form opens empty with the default shown rather than demanding
-input. A description, when written, goes near the top of the issue above the
-machine-generated context, because a reporter who bothered to explain
-themselves has supplied the most useful thing in the report.
-
-Asking the same question twice joins the existing issue instead of filing a
-duplicate. Identity is the **question**, not the title: the title is
-user-editable, so keying on it would let one question be filed twice just
-because two people worded the heading differently. Each issue carries an
-invisible `<!-- kb-gap-key: … -->` marker derived from the question, and that
-is what dedupe matches. That check is in two places on purpose — GitHub's issue list is
-eventually consistent, so an issue filed seconds ago is not reliably returned
-by the next list call, and the API check alone files duplicates. A short
-in-process memo covers that window. Both paths share one definition of "same
-question" (`gapKey`), so they cannot disagree about whether two flags match.
-
-### Why not Glean's MCP for this
-
-Glean's MCP server indexes company content — Confluence, Jira, Slack. The
-parent spec lives in Git and is served by this app, so it is not in that index;
-MCP cannot retrieve it. MCP is also the same service behind the same OAuth wall
-as the Chat API already in use, so it adds a protocol layer rather than a
-capability. Retrieval therefore runs over the spec document itself, which is
-also what keeps the answer provably spec-derived.
-
-## Sign-in and who changed what
-
-Users sign in through JumpCloud over OIDC. The handshake uses `openid-client`
-rather than hand-rolled code: discovery, PKCE, state, nonce, and ID-token
-signature and claim validation are each a place where a subtle mistake becomes
-"anyone can be anyone" — and this identity is written into Git history.
-
-**Commits carry the person, not the bot.** GitHub separates commit *author*
-from *committer*, so a spec change reads:
-
-```
-AUTHOR    Jing Xue <jxue@wyze.com>                     ← who asked for it
-COMMITTER AI Spec Explorer <spec-explorer@wyze.com>    ← what made the commit
+```text
+app/                 Pages and API route handlers, including OIDC endpoints
+components/          SpecWorkspace, tabs, editor, and sign-in UI
+lib/auth/            OIDC, signed sessions, access and origin checks
+lib/providers/       Glean, optional Glean knowledge lookup, and Bedrock
+lib/                 Compiler, schemas, GitHub, retrieval, teams, and rule IDs
+specs/               Team manifest, parent knowledge bases, and child specs
+tests/               Application tests
+tools/               Glean stub, smoke tests, migration, and AWS release tooling
+infra/               Foundation, service, CI-role, and Cognito CloudFormation
+.github/             Checks/deployment workflow and repository policy snapshots
+docs/                Configuration, development, deployment, and SSO guides
 ```
 
-That is the honest split: the person decided the change, the app performed it.
-The history drawer shows the author email, so every revision names who made it.
+`components/SpecWorkspace.tsx` owns workspace state; `app/page.tsx` enforces
+page access. `lib/compiler.ts` sends provider-neutral prompts and validates JSON
+against Zod schemas, with one corrective retry. `lib/providers/glean.ts` is the
+Glean transport. Team discovery, retrieval, and write-path resolution are
+described in [the multi-team guide](docs/multi-team.md).
 
-Gap reports and change requests to the parent spec carry the reporter's email
-in the body. **Issues and pull requests are still *opened* by the service
-account** — GitHub has no way for a token to act as another user — so
-attribution lives in the content, not the GitHub actor. If you need the GitHub
-actor to be the person, each user needs their own token, which is a different
-and much larger design.
+## Integrations and security boundaries
 
-### Details that matter
+- **GitHub** stores specifications, history, PRs, issues, and follower files.
+  A server-side token acts for the service; users do not connect personal GitHub
+  accounts. Signed-in identity is recorded for attribution.
+- **Glean** is the production compiler. `GLEAN_AGENT=GPT` requests spec-only
+  generation. Optional company-knowledge lookup is a separate answer panel and
+  is disabled in production. No direct Jira, Confluence, or Slack credentials
+  are needed by this application.
+- **Cognito and JumpCloud** authenticate users. Secure, HttpOnly signed session
+  cookies last eight hours. Local sign-out clears the application's cookie;
+  it does not globally sign out of JumpCloud or immediately revoke other sessions.
+- **AWS** runs the service; there is no application database, Redis, or vector
+  store. GitHub is the persistent source of truth. Request limits are in memory
+  per task, not a cluster-wide quota.
 
-- **Session is a signed JWT in an HttpOnly cookie**, not server state — this
-  app has no database and should not grow one to remember who is looking at
-  it. The cost is that a session cannot be revoked before it expires, which is
-  why the lifetime is eight hours and why rotating `SESSION_SECRET`
-  invalidates every session at once.
-- **`SESSION_SECRET` must be at least 32 characters**, enforced at startup. A
-  short secret makes the signature forgeable, and here that means forging an
-  identity that lands in Git history.
-- **`OIDC_ALLOWED_EMAIL_DOMAINS`** restricts who may sign in. A JumpCloud
-  tenant usually authenticates contractors and guests as well, which is not
-  the same set as "staff".
-- The access token from JumpCloud is **used once and discarded** — the app
-  never calls the IdP on the user's behalf, so keeping it would be storing a
-  credential for no reason.
-- Sign-out drops the local cookie only. Single logout would sign the user out
-  of every app behind the IdP, which is rarely what closing one tool means.
+Credentials remain server-side and must never appear in commits, client bundles,
+logs, or Docker build arguments. Repository/spec metadata can be shown in the UI.
+Protected API routes use `withApiAccess` and same-origin checks for mutations.
+Ask/compile limits use the signed-in identity. Production rejects the development bypass and direct
+commits. Health checks do not prove that upstream integrations are working.
 
-## Teams and their knowledge bases
+## Contributing and deployment
 
-Each team owns a folder holding its own parent spec — that team's knowledge
-base — and the child specs distilled into it over time.
+Follow [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md), and
+[the development workflow](docs/development-workflow.md):
 
-```
-specs/
-  teams.json                      display names, order, rule-ID prefixes
-  services/parent.md              SVC   — subscriptions, entitlement, upsell
-  services/followers.txt          who reviews changes to it
-  services/cam-plus/behavior.md
-  hardware/parent.md              HW    — HW features, plugin-page SW features
-  app-experience/parent.md        APPEX — information architecture
-  platform/parent.md              PLAT  — accounts, identity, data model, APIs
-  others/parent.md                MISC  — holding area, not a destination
-```
+1. Branch from current `origin/main`, develop locally, and run the required checks.
+2. Push the topic branch and **open a PR** targeting `main` with validation and rollback details.
+3. **Wait** for `application`, `infrastructure`, and `PR gate` to pass on the
+   latest PR commit. Update from `main` and resolve review threads. No other
+   person's approval is required; bypassing the rules is prohibited.
+4. Squash merge. The resulting `main` push validates again, publishes/scans an
+   immutable ECR image, and deploys it to ECS.
+5. Monitor the main workflow and verify the intended image, healthy tasks and
+   targets, and relevant application behavior before reporting deployment complete.
 
-**A team is a folder with a `parent.md` in it.** Nothing has to be registered
-for the app to notice one, so the repo stays self-describing and a stale
-manifest can never hide a team that exists. `specs/teams.json` supplies only
-display names, ordering, and the rule-ID prefix.
+PRs validate only. There is **no separate development or preview deployment**;
+merging to `main` triggers **production deployment**, including documentation-
+and specification-only merges. The automated release updates only the image;
+infrastructure, SSO, DNS, and runtime configuration changes require the operator
+procedure and are not applied merely by merging templates.
 
-**Rule IDs carry the team**, because `hardware/plugin-page` and
-`app-experience/plugin-page` would otherwise both namespace to `PLUGINPAGE` —
-impossible with one knowledge base, likely with five. The prefix is chosen in
-the manifest rather than derived: auto-shortening "app-experience" yields
-`APPEXPERIE`, which is both mangled and long for something cited in tickets.
+## Documentation
 
-**Each spec resolves to its own team's parent.** Parent Check compares the
-hardware spec against the hardware knowledge base, never against Services.
-
-Today a spec belongs to exactly one team and Ask searches within one team.
-Cross-team questions — *"what does the plugin page show for a Cam Plus
-user?"* — span three knowledge bases and are not answered yet; see
-`docs/multi-team.md` for the federated-read design and why write stays
-siloed.
-
-Pick which spec the compilers run against with the selector in the left panel.
-It is deliberately one-at-a-time: each spec is its own source of truth until it
-merges into the parent, and compiling a union of documents would make rule
-citations ambiguous about which spec they came from.
-
-**Rule IDs are namespaced per spec** — `CAMPLUS-R-101` — so merging children
-into the parent cannot collide and a citation always says where it came from.
-Bare `R-xxx` stays valid for the parent.
-
-### Requesting a change to the parent
-
-**Parent Check** compares the selected child against the parent and classifies
-every rule as an `addition` (parent is silent), a `contradiction` (both define
-it, incompatibly), or a `duplicate`. Then **Request change to parent** opens a
-pull request against the parent spec.
-
-Two rules govern what that PR contains:
-
-- **Only additions are applied**, and they are applied by deterministic string
-  work in `lib/merge-additions.ts`, not by asking the model to rewrite the
-  parent. A model rewrite of the knowledge base could silently reword or drop
-  rules nobody asked it to touch, and the parent is the one document that must
-  never change by accident. Re-requesting is idempotent: a rule the parent
-  already has is skipped, not duplicated.
-- **Contradictions are never applied.** Which spec wins is a product decision,
-  so they travel to the followers as a table in the PR body instead.
-
-The request always goes out as a pull request, whatever `ALLOW_DIRECT_COMMIT`
-says. The knowledge base always gets reviewed.
-
-### Followers
-
-`spec/followers.txt` (beside the parent spec) lists one GitHub username per
-line; `#` starts a comment.
-
-They are requested as PR reviewers. **GitHub only allows review requests for
-users with repo access**, which the people who care most about subscription
-behavior often do not have — so anyone GitHub refuses is `@`-mentioned in the
-PR body instead, which still notifies them. The app reports which happened:
-
-```
-1 rule(s) merged · mentioned jxue349, octocat (no write access)
-```
-
-This is why followers live in a plain file rather than CODEOWNERS: CODEOWNERS
-can only name people who can push.
-
----
-
-## How spec changes get checked in
-
-Default and recommended path:
-
-1. Edit the spec in the left panel. The editor tracks dirty state.
-2. **Check in changes** → enter a summary (the commit message and PR title are
-   pre-filled as `spec: <summary>`).
-3. The server re-reads the file's blob SHA. If it moved since you loaded it,
-   you get a **409** and a *spec changed upstream* prompt with the upstream
-   content — nothing is overwritten silently.
-4. Otherwise it creates `spec/update-<timestamp>` from the base branch head,
-   commits, opens a pull request, and hands back the PR link.
-
-**Why a PR and not a commit:** a spec change is a product-truth change, so it
-needs review, and a merged PR gives a one-click revert path.
-
-Direct commits to the base branch require **both** `ALLOW_DIRECT_COMMIT=true`
-*and* an explicit two-step confirmation in the check-in dialog. The upstream
-SHA check still applies. Use it only against a throwaway sandbox repo.
-
-### Rollback
-
-The spec's history is the repo's history, so rollback is a Git operation:
-
-- **A merged spec PR made things worse** → open the merged PR on GitHub and hit
-  **Revert**. That opens a revert PR; merge it and the spec is back to the
-  previous behavior. This is the normal path.
-- **A direct commit** (only possible with `ALLOW_DIRECT_COMMIT=true`) →
-  `git revert <sha>` and push, or open a PR with the revert.
-- **A bad PR that has not merged** → just close it. The base branch never moved.
-- After any rollback, press **Pull latest** in the app and recompile; the four
-  views follow whatever is now on the base branch.
-
-The **History** drawer lists the last 10 commits touching the spec path, each
-linking to GitHub, so you can find the commit to revert.
-
----
-
-## Architecture
-
-Single deployable Next.js (App Router) service: React frontend plus API routes
-as the backend. No database — GitHub holds the spec, and UI state is React
-state.
-
-```
-app/
-  page.tsx                      two-panel UI, owns spec + draft state
-  api/spec/route.ts             GET    read spec at base branch head
-  api/spec/refresh/route.ts     POST   "Pull latest"
-  api/spec/history/route.ts     GET    last 10 commits for the spec path
-  api/spec/commit/route.ts      POST   SHA check -> branch -> commit -> PR
-  api/spec/init/route.ts        POST   seed the starter spec via the PR flow
-  api/compile/{explorer,tests,states,consistency}/route.ts
-components/                     spec panel, dialogs, the four tabs
-lib/
-  env.ts          server-only env access
-  github.ts       Octokit client + the commit orchestration (injectable)
-  glean.ts        compile(): Glean Chat call, answer extraction, retries
-  json.ts         fence strip -> brace-balanced extract -> parse -> zod
-  prompts.ts      the four compiler prompts
-  schemas.ts      request + response contracts (zod)
-  ratelimit.ts    in-memory per-IP limiter
-  client/         typed fetch wrappers, rule lookup, exports, mermaid source
-tests/            unit + mocked-integration tests
-```
-
-### Security posture
-
-- **Secrets are server-side only.** `GLEAN_API_KEY` and `GITHUB_TOKEN` are
-  read in `lib/env.ts`, which is imported exclusively by API routes. Verified
-  against the built bundle — no token, key, or env name appears in
-  `.next/static`.
-- **Errors never leak.** Clients get a friendly message plus an 8-character
-  request ID; details are logged server-side through a redactor that masks
-  `github_pat_…`, a `Bearer …` value, or an auth header. Glean error bodies are
-  never forwarded to the client, only the status.
-- **All input is validated and bounded** with zod: spec ≤ 100 KB, what-if
-  question ≤ 500 chars, ≤ 10 scenario devices, bounded strings everywhere.
-  Anything else is a 400.
-- **Model output is untrusted**, and doubly so here: Glean Chat has no
-  structured-output or JSON-schema mode, so nothing at the API level guarantees
-  the reply is JSON. Replies are fence-stripped, brace-balance-extracted,
-  parsed, and schema-validated, with one corrective retry; everything renders as text
-  through React's default escaping. The one place HTML is injected is the
-  Mermaid diagram, and that is Mermaid's own output under
-  `securityLevel: 'strict'`, built from state and event labels already
-  whitelisted to plain label characters in `lib/client/mermaid-source.ts`.
-- **Rate limit** of 20 compiles/min/IP on the compile routes, so a stuck client
-  cannot burn API spend. It is in-memory and per-process — a cost guard, not an
-  auth boundary. Put a real limiter at the edge before exposing this publicly.
-- **Timeouts and retries**: 30s timeout with one transport retry on Glean calls
-  (408/429/5xx and timeouts only — a rejected token is not retried), plus one
-  corrective retry when the reply fails schema validation.
-- **Sign-in and attribution.** With `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
-  `OIDC_CLIENT_SECRET` and `SESSION_SECRET` set, every write requires a
-  signed-in user and is attributed to them. Normal production startup rejects missing authentication configuration. Spec reads,
-  model calls, and writes require a signed-in user. Local development can
-  explicitly opt out with `DEV_AUTH_BYPASS=true`; production rejects that setting.
-  The temporary `AUTH_MODE=test-readonly` setting permits VPN-only testing without
-  SSO, blocks every repository mutation, and allows startup before integration
-  credentials are added. The UI identifies this mode and missing credentials.
-  See the [deployment runbook](docs/deployment-runbook.md#temporary-testing-without-sso)
-  for secret provisioning, task restart, and restoring SSO.
-  In AWS Secrets Manager, store the Glean token under `GLEAN_TOKEN`; ECS maps
-  that field to the application's `GLEAN_API_KEY` environment variable.
-
-### Deployment from main
-
-Changes reach protected `main` through a PR with passing checks; no reviewer
-approval is required. Follow the [development workflow](docs/development-workflow.md)
-for local validation, squash merge, and release verification.
-
-Pushes to `main` run the application and
-infrastructure checks, build an AMD64 image, push it to ECR, and update ECS through
-CloudFormation. Deployment uses GitHub OIDC, immutable image digests, an ECR scan
-gate, and task/ALB health verification. Pull requests run checks only.
-The release preserves the deployed authentication, secrets, network, and capacity
-settings. Infrastructure changes use the operator workflow separately.
-See [automatic releases and rollback](docs/deployment-runbook.md#automatic-releases-from-main).
-
----
-
-## Tests
-
-```bash
-npm test          # vitest
-npm run typecheck # tsc --noEmit, strict
-npm run lint      # eslint (flat config, next/core-web-vitals + next/typescript)
-```
-
-### Trying the app without credentials
-
-`npm run stub:glean` starts a local stand-in for Glean's chat endpoint on
-127.0.0.1:3399. Point the app at it:
-
-```
-GLEAN_API_KEY=local-stub-token
-GLEAN_BASE_URL=http://127.0.0.1:3399
-```
-
-All four tabs then compile for real — through the routes and `lib/glean.ts` —
-with no token and no quota burn, which also makes the demo rehearsable offline.
-The stub replies the way a chat assistant actually does (prose wrapped around a
-` ```json ` fence), so the extraction pipeline is genuinely exercised.
-
-`curl -s http://127.0.0.1:3399/__log` shows what the app sent: the agent
-config, whether a bearer header was present, and whether the prompt carried the
-spec. Use it to confirm `agent: "GPT"` is really going over the wire.
-
-The GitHub side still needs a real token — the stub only covers Glean.
-
-- `tests/json.test.ts` — fence stripping, brace-balanced extraction (including
-  braces and escaped quotes inside strings), schema validation errors.
-- `tests/commit-conflict.test.ts` — the SHA-conflict logic and commit
-  orchestration, driven through a fake repo client: conflict detection,
-  first-time create, upstream deletion, "no write happens on conflict", and
-  both direct-commit guards.
-- `tests/compile-routes.test.ts` — one integration test per compile route with
-  Glean mocked at the `fetch` boundary: response shapes, request construction
-  (endpoint, bearer header, `saveChat: false`, **`agent: "GPT"`**, `ActAs` only
-  when configured), prompt construction (full spec present, citation contract
-  present), answer extraction from Glean's message/fragment structure,
-  input-validation 400s, the corrective retry, the 502 after two bad replies,
-  transport retry on 429/5xx, 401 → 502 with no token echoed, timeout → 504,
-  and the rate limit.
-- `tests/rules-and-mermaid.test.ts` — rule lookup in spec text, Mermaid label
-  sanitising, Markdown/CSV export escaping.
-
----
-
-## Deploy
-
-Single Node service.
-
-```bash
-docker build -t ai-spec-explorer .
-docker run --rm -p 3000:3000 --env-file .env ai-spec-explorer
-```
-
-The image runs as a non-root user, uses Next's `standalone` output (no build
-tooling at runtime), and contains no secrets — pass them in at run time as
-environment variables or mounted secrets.
-
-### AWS deployment
-
-The approved deployment uses ECS Fargate in the shared account, with company
-network restrictions and JumpCloud sign-in at `https://internal-specs.wyze.com`.
-See [the master plan](docs/deployment-master-plan.md) for phase status and
-[the deployment runbook](docs/deployment-runbook.md) for repeatable commands.
-
-Production requires `APP_BASE_URL`, all OIDC settings, an allowed email domain,
-and a strong shared session secret in addition to GitHub and compiler settings.
-Keep `ALLOW_DIRECT_COMMIT=false`. Runtime secrets are injected by ECS; the image
-build does not require them. API requests have a 120-second total deadline and
-cancel downstream work on expiry or client disconnect. Rate limits are keyed by
-signed-in user and remain local to each process, so replicas do not share a
-single global quota.
+- [Architecture and AWS setup](architecture.md): components, network, authentication, storage, and release design.
+- [Configuration](docs/configuration.md): local settings, GitHub/Glean credentials, and production secret mapping.
+- [Multi-team specifications](docs/multi-team.md): discovery, paths, rule IDs, and change proposals.
+- [Development workflow](docs/development-workflow.md): local validation, PR gates, merge, and release verification.
+- [Deployment runbook](docs/deployment-runbook.md): operator changes, secret rotation, DNS, and rollback.
+- [Deployment master plan](docs/deployment-master-plan.md): dated deployment evidence and remaining acceptance work.
+- [Cognito and JumpCloud SSO](docs/cognito-sso.md): IT values, claim mapping, and login verification.
+- [Security remediation](docs/security-remediation.md): resolved findings and known dependency advisories.
