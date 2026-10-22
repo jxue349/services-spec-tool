@@ -54,7 +54,7 @@ def run(command, **kwargs):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['validate', 'plan', 'apply', 'status', 'publish'])
-    parser.add_argument('stack', nargs='?', choices=['foundation', 'service', 'ci'], default='foundation')
+    parser.add_argument('stack', nargs='?', choices=['foundation', 'service', 'ci', 'cognito'], default='foundation')
     parser.add_argument('--profile', default=f'{ACCOUNT}_AWSAdministratorAccess')
     parser.add_argument('--parameters', type=Path, help='JSON object of non-secret CloudFormation parameters')
     parser.add_argument('--change-set', help='Exact change set ARN returned by plan')
@@ -73,7 +73,7 @@ def main():
         return {item['OutputKey']: item['OutputValue'] for item in data['Stacks'][0].get('Outputs', [])}
 
     if args.action == 'validate':
-        for stack in ('foundation', 'service', 'ci'):
+        for stack in ('foundation', 'service', 'ci', 'cognito'):
             aws('cloudformation', 'validate-template', '--template-body', f'file://{ROOT}/infra/{stack}.yaml')
             print(f'{stack}: template validated', flush=True)
         return

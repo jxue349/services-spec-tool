@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Internal Specs Cognito with dedicated JumpCloud SAML federation; application enforcement is managed separately
+Parameters:
+  OwnerEmail:
+    Type: String
+    Default: cxu@wyze.com
+  JumpCloudMetadataUrl:
+    Type: String
+    Description: Dedicated Internal Specs SAML metadata; empty only for an unfederated bootstrap
+    Default: https://sso.jumpcloud.com/saml2/metadata/6ad9567943ca6f80a6adf8a8
+    AllowedPattern: '^$|^https://sso\.jumpcloud\.com/saml2/metadata/[a-f0-9]{24}$'
+Conditions:
+  HasJumpCloud:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: JumpCloudMetadataUrl
+          - ''
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: internal-specs-users
+      DeletionProtection: ACTIVE
+      UserPoolTier: LITE
+      MfaConfiguration: 'OFF'
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      UsernameAttributes:
+        - email
+      UsernameConfiguration:
+        CaseSensitive: false
+      AutoVerifiedAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+      UserPoolTags:
+        Service: internal-specs
+        Owner:
+          Ref: OwnerEmail
+  HostedUiDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain:
+        Fn::Sub: internal-specs-${AWS::AccountId}
+      ManagedLoginVersion: 1
+      UserPoolId:
+        Ref: UserPool
+  JumpCloudIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: HasJumpCloud
+    Properties:
+      UserPoolId:
+        Ref: UserPool
+      ProviderName: jumpcloud
+      ProviderType: SAML
+      ProviderDetails:
+        MetadataURL:
+          Ref: JumpCloudMetadataUrl
+        # The application requires an OIDC state/nonce/PKCE round trip.
+        IDPInit: 'false'
+        # IT's metadata does not advertise a SingleLogoutService endpoint.
+        IDPSignout: 'false'
+        EncryptedResponses: 'false'
+        RequestSigningAlgorithm: rsa-sha256
+      AttributeMapping:
+        # Match the existing wyze-kb-users JumpCloud integration in this account.
+        email: email
+        name: name
+  AppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: internal-specs-client
+      UserPoolId:
+        Ref: UserPool
+      GenerateSecret: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      # Ref creates the dependency: register the IdP before enabling it here.
+      SupportedIdentityProviders:
+        Fn::If:
+          - HasJumpCloud
+          - - Ref: JumpCloudIdentityProvider
+          - []
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+      CallbackURLs:
+        - https://internal-specs.wyze.com/api/auth/callback
+      DefaultRedirectURI: https://internal-specs.wyze.com/api/auth/callback
+      LogoutURLs:
+        - https://internal-specs.wyze.com/
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 1
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      ReadAttributes:
+        - email
+        - email_verified
+        - name
+      WriteAttributes:
+        - email
+        - name
+Outputs:
+  UserPoolId:
+    Value:
+      Ref: UserPool
+  ClientId:
+    Value:
+      Ref: AppClient
+  OidcIssuer:
+    Value:
+      Fn::Sub: https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+  HostedUiUrl:
+    Value:
+      Fn::Sub: https://${HostedUiDomain}.auth.${AWS::Region}.amazoncognito.com
+  SamlEntityId:
+    Value:
+      Fn::Sub: urn:amazon:cognito:sp:${UserPool}
+  SamlAcsUrl:
+    Value:
+      Fn::Sub: https://${HostedUiDomain}.auth.${AWS::Region}.amazoncognito.com/saml2/idpresponse

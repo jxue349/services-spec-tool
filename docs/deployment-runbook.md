@@ -14,7 +14,7 @@ approvals and no bypass actors. See the [development workflow](development-workf
 for contributor commands and the administrative policy files.
 
 1. Application checks must pass: lint, typecheck, Vitest, production build/smoke,
-   and the production dependency audit. Infrastructure checks validate all three
+   and the production dependency audit. Infrastructure checks validate all four
    CloudFormation templates, lint the workflow, and run deployment-tool tests.
    The required **PR gate** explicitly fails unless both jobs succeed; the
    deployment job depends on that gate.
@@ -41,8 +41,10 @@ Re-running the current `main` workflow uses a new immutable image tag.
 
 GitHub-hosted runners are outside the service's VPN/office allowlist. CI verifies
 health through AWS APIs; browser and provider acceptance checks run from an
-approved network. The workflow does not broaden network access. Temporary
-`test-readonly` mode remains in effect until an operator explicitly changes it.
+approved network. The workflow does not broaden network access. Production
+uses `AuthMode=oidc` after the 2026-10-22 operator cutover; image releases preserve
+that setting. Assigned-user login, authenticated reads, local sign-out, and
+repeat sign-in pass; see [the current SSO verification](cognito-sso.md#cutover-and-login-verification).
 
 Infrastructure/template changes and SSO setup still use the operator plan/apply
 procedure below. Merging a template change alone does not apply it to production.
@@ -97,7 +99,7 @@ npm test
 npm run build:verify
 python3 tools/smoke-production.py --dist .next-verify
 python3 tools/deploy.py validate
-uvx --from cfn-lint==1.58.0 cfn-lint infra/foundation.yaml infra/service.yaml infra/ci.yaml
+uvx --from cfn-lint==1.58.0 cfn-lint infra/foundation.yaml infra/service.yaml infra/ci.yaml infra/cognito.yaml
 python3 -m unittest discover -s tools -p 'test_*.py'
 ```
 
@@ -106,6 +108,19 @@ does require them. The initial application configuration uses Glean, spec-only
 answers, JumpCloud, and the repository's `specs/` directory. Development can
 explicitly bypass authentication with `DEV_AUTH_BYPASS=true`; production cannot.
 The separately authorized temporary mode is described below.
+
+## Cognito and JumpCloud SSO
+
+The separate `internal-specs-cognito` stack provisions the dedicated user pool,
+app client, and Hosted UI domain needed for IT's JumpCloud SAML setup. It does
+not enable application authentication. Use `tools/deploy.py plan cognito`,
+inspect the change set, and apply its exact ARN with `apply cognito`.
+See [Cognito setup and IT values](cognito-sso.md) for the provisioned identifiers,
+federation, verification, and rollback. The separate service cutover enabled
+OIDC on 2026-10-22. Anonymous protected APIs return 401. Cognito maps the actual
+JumpCloud claims `email` and `name`, matching the existing `wyze-kb-users` pool;
+assigned-user callback and authenticated spec loading pass. After claim-mapping
+changes, clear the prior Cognito login session before retesting.
 
 ## Foundation
 
@@ -143,7 +158,7 @@ Populate `/internal-specs/prod/runtime` as one JSON secret. Required keys:
 - `GITHUB_TOKEN`: fine-grained service token for the selected spec repository;
   Contents read-only for temporary testing. Full authenticated operation needs
   Contents, Pull requests, and Issues read/write permissions.
-- `OIDC_CLIENT_SECRET`: the dedicated JumpCloud application's secret.
+- `OIDC_CLIENT_SECRET`: the dedicated Cognito app client's generated secret.
 - `SESSION_SECRET`: at least 32 random bytes, encoded for an environment variable.
 - OAuth mode: `GLEAN_CLIENT_ID` and `GLEAN_CLIENT_SECRET`.
 - Token mode instead: `GLEAN_TOKEN`. ECS injects this secret field into the
@@ -164,10 +179,12 @@ never put secret values directly into command arguments, Git, logs, or chat.
 Do not deploy using a personal GitHub CLI OAuth token as the service credential.
 The task reads `GLEAN_ACT_AS` from this same secret when required.
 
-Create the JumpCloud application with callback
-`https://internal-specs.wyze.com/api/auth/callback`, approved assignees, and
-`openid email profile` scopes. Confirm its issuer and client ID. Assigned users
-can read and propose PRs across all teams; there is no per-team user-role model.
+Configure the dedicated JumpCloud SAML application with Cognito's SP Entity ID
+and ACS URL from [the SSO setup](cognito-sso.md). Register
+`https://internal-specs.wyze.com/api/auth/callback` on the Cognito OIDC client
+with `openid email profile` scopes. Use Cognito's issuer, client ID, and secret
+in the application. Assigned users can read and propose PRs across all teams;
+there is no per-team user-role model.
 
 ECS reads secrets when tasks start. Rotate credentials in Secrets Manager and
 replace tasks to load the new version. Session-secret rotation signs everyone
@@ -175,7 +192,11 @@ out; use a coordinated replacement when retiring a compromised signing key.
 
 ## Temporary testing without SSO
 
-The user authorized disabling SSO temporarily on 2026-10-21. Deploy with
+This historical phase ended with the 2026-10-22 OIDC cutover. Re-entering it
+requires deliberate approval because it allows anonymous reads/model calls
+inside the network boundary.
+
+The user authorized disabling SSO temporarily on 2026-10-21. That phase used
 `AuthMode=test-readonly` and `GleanCredentialMode=auto`. Omit the OIDC issuer and
 client ID for this phase. The existing VPN/office source allowlist remains the
 network boundary. There is no authenticated user identity in this mode, even
@@ -236,8 +257,8 @@ Prepare a non-secret parameter file outside the repository:
 {
   "ImageUri": "012619468172.dkr.ecr.us-west-2.amazonaws.com/internal-specs@sha256:<verified-digest>",
   "AuthMode": "oidc",
-  "OidcIssuer": "https://<actual-jumpcloud-issuer>",
-  "OidcClientId": "<actual-client-id>",
+  "OidcIssuer": "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_Q18L1whbh",
+  "OidcClientId": "35vi4dlcdhefcc8pvq56jp8nh3",
   "GleanCredentialMode": "auto",
   "DesiredCount": 2
 }

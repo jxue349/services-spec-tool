@@ -37,7 +37,7 @@ dependencies included. Known residual findings are recorded in
 For infrastructure, deployment tooling, or workflow changes, also run:
 
 ```bash
-uvx --from cfn-lint==1.58.0 cfn-lint infra/foundation.yaml infra/service.yaml infra/ci.yaml
+uvx --from cfn-lint==1.58.0 cfn-lint infra/foundation.yaml infra/service.yaml infra/ci.yaml infra/cognito.yaml
 python3 -m unittest discover -s tools -p 'test_*.py'
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
 ```

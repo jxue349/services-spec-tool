@@ -1,6 +1,6 @@
 # Internal Specs AWS Deployment Master Plan
 
-Status: **Read-only test service live without SSO; DNS, GitHub reads, and Glean Ask/state generation verified**
+Status: **SSO enabled; healthy deployment; assigned-user login, spec loading, and local sign-out verified**
 
 Prepared: **2026-10-21**
 
@@ -24,9 +24,18 @@ the unchanged VPN/office allowlist. Block all repository mutations and OIDC
 login/callback routes; permit spec reads and model calls once credentials are
 configured. The app may start with empty integration fields, explicitly showing
 setup status. The runtime secret contains a generated session key and a working
-GitHub token and Glean token; future OIDC fields remain empty. This amendment permits the test service
+GitHub token and Glean token; OIDC fields were initially empty. This amendment permitted the test service
 and DNS PR to proceed before JumpCloud setup; full-release criteria below still
 apply when returning to `AuthMode=oidc`.
+
+**SSO cutover, authorized 2026-10-22:** the owner confirmed assignment of
+`wyze-internal-specs-users` and tester membership. The operator enabled OIDC
+without changing the image or network allowlist. Both replicas are healthy and
+anonymous protected requests return 401. The initial claim-name mismatch was
+corrected by matching the existing `wyze-kb-users` Cognito mappings (`email` and
+`name`). After clearing the earlier Cognito session, Work-profile browser
+testing passes login as `cxu@wyze.com`, spec loading, local sign-out, and repeat
+sign-in. See [the SSO verification](cognito-sso.md#cutover-and-login-verification).
 
 **CI amendment, requested 2026-10-21:** pushes to `main` should publish an ECR
 image and update ECS after application/infrastructure checks pass. Use a dedicated
@@ -43,7 +52,7 @@ remain validation-only. Infrastructure changes retain the operator plan/apply pa
 | DNS delivery | PR in `wyzelabs-inc/wyze-dns-config` | User selected |
 | Region and runtime | `us-west-2`, ECS Fargate in `wyze-internal` | Approved baseline |
 | Network access | Internet-facing ALB restricted to company VPN and office egress IPs; private tasks | Approved baseline matching existing services |
-| Authentication | JumpCloud OIDC by default; temporary VPN-only read-only test mode | User authorized temporary SSO disablement |
+| Authentication | JumpCloud SAML through dedicated Cognito OIDC | OIDC enforcement active; group/tester assignment confirmed; assigned-user login, reads, and local sign-out verified |
 | Contributor access | Assigned JumpCloud users can read and propose changes across all registered teams | Approved by user |
 | Spec repository | `wyzelabs-inc/KB-Spec-explorer`, `specs/`, branch `main` | Approved baseline |
 | Compiler | Glean; company-knowledge second opinion disabled initially | Approved baseline |
@@ -97,8 +106,9 @@ flowchart LR
     ALB -->|HTTP 3000| ECS[Two Fargate tasks in private subnets]
     ECS -->|HTTPS through NAT| GitHub[GitHub specs and PRs]
     ECS -->|HTTPS through NAT| Glean[Glean Chat API]
-    User -->|Sign in| JumpCloud[JumpCloud OIDC]
-    ECS -->|Discovery and token exchange| JumpCloud
+    User -->|Sign in| Cognito[Dedicated Cognito pool]
+    Cognito <-->|SAML federation| JumpCloud[JumpCloud]
+    ECS -->|OIDC discovery and token exchange| Cognito
     ECR[ECR image] --> ECS
     Secrets[Secrets Manager] -->|Task startup| ECS
     ECS --> Logs[CloudWatch Logs]
@@ -108,7 +118,7 @@ flowchart LR
 | --- | --- |
 | GitHub REST API | Read specs/history; create branches, commits, PRs, and issues. For temporary read-only testing, a fine-grained token restricted to the selected repository needs Contents read-only. Full authenticated operation needs Contents, Pull requests, and Issues read/write permissions. |
 | Glean Chat API | Compile supplied specs and answer questions. Use OAuth client credentials or an API token, never both. Validate the configured spec-only agent in the actual tenant. |
-| JumpCloud OIDC | Employee authentication and change attribution. Requires application assignment, issuer, client ID/secret, and the exact callback URI. |
+| JumpCloud SAML / Cognito OIDC | Employee authentication and change attribution. Federation, enforcement, assigned-user callback, and local sign-out are verified; exact `email`/`name` SAML mappings match the existing knowledge-base pool. See [SSO setup](cognito-sso.md). |
 | ECR, Secrets Manager, CloudWatch | Image pull, secret injection, and application logs through the ECS execution role. |
 | Amazon Bedrock | Optional future compiler alternative; requires a verified model and scoped task-role permissions. No Bedrock permissions are needed for the Glean baseline. |
 
@@ -177,11 +187,12 @@ credentials rather than embedding the local administrator profile in CI.
 | `SPEC_PARENT_PATH` / `SPEC_BASE_BRANCH` | `specs/services/parent.md` / `main` |
 | `ALLOW_DIRECT_COMMIT` | `false` |
 | `OIDC_ALLOWED_EMAIL_DOMAINS` | `wyze.com`, combined with restricted JumpCloud application assignment |
-| `OIDC_ISSUER` / `OIDC_CLIENT_ID` | From the service's JumpCloud application |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` | From the dedicated Cognito pool/client; see [SSO setup](cognito-sso.md) |
 | Secret values | `GITHUB_TOKEN`, `OIDC_CLIENT_SECRET`, `SESSION_SECRET`, and the chosen Glean credential |
 | Glean token secret mapping | Secrets Manager field `GLEAN_TOKEN` is injected as application environment variable `GLEAN_API_KEY`; the older empty `GLEAN_API_KEY` secret field is unused |
 
-Register `https://internal-specs.wyze.com/api/auth/callback` with JumpCloud.
+Register `https://internal-specs.wyze.com/api/auth/callback` with the Cognito app
+client. Give IT the Cognito SP Entity ID and SAML ACS URL from [SSO setup](cognito-sso.md).
 Generate a strong session secret of at least 32 random bytes and keep the same
 value across replicas. Store secrets through a secure provisioning path, not
 CloudFormation plaintext parameters, committed files, shell command arguments,
@@ -198,7 +209,7 @@ while resolving these dependencies, but do not launch with placeholder values.
 | --- | --- |
 | Individual service owner and Wyze email for DNS ownership | Default to current operator `cxu@wyze.com`; parameterized |
 | Current approved VPN/office egress CIDRs | Verified six US VPN/office `/32` rules against the existing roadmap ALB; recorded in `infra/foundation.yaml`. Overseas access remains outside the initial baseline. |
-| JumpCloud application, permitted assignees, issuer, and credentials | Required before enabling normal authenticated operation; deferred for the authorized read-only test phase |
+| JumpCloud application, permitted assignees, issuer, and credentials | Configured and owner-confirmed; assigned-user login/reads/logout verified; unassigned-user denial remains untested |
 | GitHub service token and confirmation of repository access | User populated the runtime secret; ECS tasks replaced and real spec reads, listing, teams, and history verified on 2026-10-21. Write permissions remain untested. |
 | Glean credential and successful spec-only agent call | User populated `GLEAN_TOKEN`; direct Chat API, live Ask with three rule citations, and state generation pass on 2026-10-21 |
 | Approved sandbox repository and separately scoped test credentials | Requested from user; required before write-path acceptance |
@@ -381,9 +392,9 @@ network resources, the certificate, and the cluster throughout rollback.
 | 2 Application preparation | Complete | 394 tests, lint, typecheck, verification build, standalone and AMD64 container smoke pass |
 | 3 Infrastructure and tooling | Operator tooling and main-branch release workflow active | [Application PR #1](https://github.com/wyzelabs-inc/KB-Spec-explorer/pull/1) merged; dedicated CI role provisioned and validated; required PR gates and repository policy documented in the development workflow |
 | 4 Foundation and image | Complete for test deployment | Test-mode image `247140b` published and scanned: zero ECR OS findings; encrypted runtime secret initialized |
-| 5 Service infrastructure checks | Test service verified | UPDATE_COMPLETE after Glean secret mapping; two healthy targets across two AZs; private task networking, HTTPS 200, writes/OIDC 403, and non-allowlisted network denial verified |
+| 5 Service infrastructure checks | OIDC deployment verified | UPDATE_COMPLETE on task definition `internal-specs:6`; two healthy tasks/targets across two AZs; original image and allowlist preserved; anonymous protected APIs return 401 |
 | 6 DNS PR and application | Complete | [DNS PR #49](https://github.com/wyzelabs-inc/wyze-dns-config/pull/49) merged at 20:14 UTC on 2026-10-21; final hostname resolves to the ALB and HTTPS works |
-| 7 Integrations and release | GitHub reads and Glean Ask/state generation verified; remaining acceptance pending | Real spec reads/listing, teams, history, Ask with citations, and state generation pass after healthy rolling replacement. JumpCloud, authenticated sandbox writes, remaining feature acceptance, failed-rollout recovery, and observation remain pending |
+| 7 Integrations and release | GitHub reads, Glean Ask/state generation, and assigned-user SSO verified | JumpCloud login as `cxu@wyze.com`, authenticated spec loading, local sign-out, and repeat sign-in pass after claim-mapping correction. Unassigned-user denial, authenticated sandbox writes, remaining feature acceptance, failed-rollout recovery, and observation remain pending |
 
 Approval record: **Approved by the user on 2026-10-21: “looks good, let get start.”** Update each phase with its commit/PR, relevant AWS
 outputs, test results, and remaining dependencies as execution progresses.

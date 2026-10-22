@@ -40,12 +40,12 @@ Parameters:
     AllowedValues: [oidc, test-readonly]
   OidcIssuer:
     Type: String
-    Description: JumpCloud OIDC issuer
+    Description: Cognito OIDC issuer for the dedicated JumpCloud SAML federation
     Default: ''
     AllowedPattern: ^$|https://.+
   OidcClientId:
     Type: String
-    Description: JumpCloud application client ID
+    Description: Cognito app client ID
     Default: ''
   GleanCredentialMode:
     Type: String
