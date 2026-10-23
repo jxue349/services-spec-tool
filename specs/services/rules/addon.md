@@ -94,4 +94,4 @@ Pro AI and Cloud 60: all camera models EXCEPT Cam V1, Window Bird Cam, WCO v1, W
 ### ADDON-019 — Cloud CVR replay & T1 dependency
 - source: Golden QA v1 Q8/Q10 (owner-verified)
 
-Cloud CVR records continuously with **7-day replay/retention**. Recording requires BOTH an active T1 association on the camera AND the Cloud CVR add-on; when T1 is moved away, the timeline shows a gap for the uncovered period — never continuous recording.
+For Cloud CVR subscribers, recordings created after updating to app version 3.25 have 30-day replay/retention; older recordings retain a 14-day window. Recording still requires BOTH an active T1 association on the same camera AND the Cloud CVR add-on.
