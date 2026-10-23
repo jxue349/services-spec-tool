@@ -111,6 +111,14 @@ Two re-engagement discount systems are described: Smart Offer PRD/TRD (50% month
 Golden QA Q18 says a Google Play upgrade from Cam Plus counts as a new subscriber to "Cam Unlimited **Pro**" — suspected typo for Cam Unlimited.
 **Next:** Jing confirms the intended tier; fix the QA text and TRIAL-002 together.
 
+### V-28 — Cloud CVR supported-camera list at app version 3.25 launch ⚠️
+- rules: ADDON-018
+**Next:** Cloud CVR and Bird Cam owners reconcile the source list with the later authoritative matrix and update the page of record.
+
+### V-29 — Whether the longer replay window applies to the Bird Watch bundle ⚠️
+- rules: ADDON-019
+**Next:** The Bird Cam PM decides whether the 30-day window applies to the Bird Watch bundle and records the decision.
+
 ## Resolved
 
 - **V-01** (2026-10-06) — "Cam Unlimited Light": owner decision — never a Wyze product; TIER-005 superseded; occurrences are source errors.
